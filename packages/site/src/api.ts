@@ -40,6 +40,49 @@ export function fetchModel(slug: string): Promise<DocModel> {
   return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
 }
 
+// ---- Ingestion status (slice 2) ----
+
+export interface StatusBuild {
+  repoId: string;
+  ref: string;
+  commitSha?: string;
+  trigger: string;
+  startedAt: string;
+  durationMs: number;
+  result: "ok" | "error";
+  error?: string;
+  fileCount?: number;
+  symbolCount?: number;
+}
+
+export interface StatusSource {
+  id: string;
+  provider: string;
+  branch: string;
+  enabled: boolean;
+  lastBuild?: StatusBuild;
+}
+
+export interface StatusResponse {
+  repos: Registry["repos"];
+  sources: StatusSource[];
+  queue: {
+    depth: number;
+    items: { repoId: string; provider: string; state: string; receivedAt: string }[];
+  };
+}
+
+/**
+ * Live server status — never cached, and unavailable in static-export mode
+ * (there is no server to ask). Returns undefined in that case.
+ */
+export async function fetchStatus(): Promise<StatusResponse | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch("/api/status");
+  if (!res.ok) throw new Error(`${res.status} fetching /api/status`);
+  return (await res.json()) as StatusResponse;
+}
+
 /** Flatten a file's symbols (including members) for rendering. */
 export function flattenSymbols(file: DocFile): DocSymbolShape[] {
   const out: DocSymbolShape[] = [];

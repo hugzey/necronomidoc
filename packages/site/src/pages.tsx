@@ -3,10 +3,12 @@ import { Link, Outlet, useLocation, useMatch, useParams } from "react-router-dom
 import {
   fetchModel,
   fetchRegistry,
+  fetchStatus,
   flattenSymbols,
   type DocModel,
   type DocSymbolShape,
   type Registry,
+  type StatusResponse,
 } from "./api.js";
 import {
   CodeText,
@@ -130,6 +132,118 @@ export function Home() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---- Build status: registered sources, last builds, queue (slice 2) ----
+
+function shortSha(sha?: string): string {
+  return sha ? sha.slice(0, 8) : "—";
+}
+
+export function StatusView() {
+  // Poll so a queued build's outcome shows up without a manual refresh.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
+  const { data, error, loading } = useAsync<StatusResponse | undefined>(fetchStatus, [tick]);
+
+  if (loading && !data) return <Loading />;
+  if (error) return <div className="alert alert-error">Failed to load status: {error}</div>;
+  if (!data) {
+    return (
+      <div className="alert alert-info">
+        <span>Build status needs a running server — it isn't available in a static export.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-bold">Build status</h1>
+      <p className="mb-6 text-base-content/60">
+        Registered source repos, their last builds, and the trigger queue.
+      </p>
+
+      {data.sources.length === 0 ? (
+        <div className="alert alert-warning">
+          <span>
+            No source repos registered — add one with{" "}
+            <code>necronomidoc repo add &lt;url&gt;</code>
+          </span>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Repo</th>
+                <th>Provider</th>
+                <th>Branch</th>
+                <th>Last build</th>
+                <th>Commit</th>
+                <th>Duration</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sources.map((s) => (
+                <tr key={s.id}>
+                  <td className="font-mono text-sm">
+                    {s.id}
+                    {!s.enabled && <span className="badge badge-ghost badge-sm ml-2">disabled</span>}
+                  </td>
+                  <td>{s.provider}</td>
+                  <td className="font-mono text-sm">{s.branch}</td>
+                  <td className="whitespace-nowrap text-sm">
+                    {s.lastBuild ? new Date(s.lastBuild.startedAt).toLocaleString() : "never"}
+                  </td>
+                  <td className="font-mono text-sm">{shortSha(s.lastBuild?.commitSha)}</td>
+                  <td className="text-sm">
+                    {s.lastBuild ? `${(s.lastBuild.durationMs / 1000).toFixed(1)}s` : "—"}
+                  </td>
+                  <td>
+                    {s.lastBuild ? (
+                      s.lastBuild.result === "ok" ? (
+                        <span className="badge badge-success badge-sm">ok</span>
+                      ) : (
+                        <span className="badge badge-error badge-sm" title={s.lastBuild.error}>
+                          failed
+                        </span>
+                      )
+                    ) : (
+                      <span className="badge badge-ghost badge-sm">pending</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Queue ({data.queue.depth})</h2>
+      {data.queue.items.length === 0 ? (
+        <p className="text-sm text-base-content/60">Idle — no builds queued.</p>
+      ) : (
+        <ul className="menu w-full rounded-box bg-base-200">
+          {data.queue.items.map((item, i) => (
+            <li key={i} className="p-2 text-sm">
+              <span>
+                <span className="font-mono">{item.repoId}</span> via {item.provider} —{" "}
+                {item.state === "running" ? (
+                  <span className="badge badge-info badge-sm">building…</span>
+                ) : (
+                  <span className="badge badge-ghost badge-sm">waiting</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

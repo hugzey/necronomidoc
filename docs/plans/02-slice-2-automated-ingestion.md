@@ -1,5 +1,11 @@
 # Slice 2 — Automated ingestion: GitHub / ADO / REST triggers, registry, queue, atomic publish
 
+> **Status: ✅ Done.** Registry is `repos.json` (CLI `repo add|list|remove`);
+> providers in `packages/server/src/ingest/providers.ts`; journaled queue in
+> `queue.ts`; persistent shallow clones in `fetch.ts`; status in `status.json`
+> + `GET /api/status` + the site's `/status` page. Setup guide:
+> [../ops-ingestion.md](../ops-ingestion.md).
+
 **Goal (requirement 7):** repos update their docs automatically on push. Implements the provider adapter pattern ([decision 0001](../decisions/0001-git-provider-adapter.md)) on top of the central-pull pipeline ([decision 0003](../decisions/0003-central-server-pull-ingestion.md)); slice 1's manual `POST /api/build` becomes one of three normalized trigger paths.
 
 ## Architecture

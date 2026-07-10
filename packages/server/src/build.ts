@@ -1,12 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MarkdownAdapter } from "@necronomidoc/adapter-markdown";
 import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
-import { slugify, type AdapterConfig, type DocAdapter, type DocModel, type RegistryEntry } from "@necronomidoc/docmodel";
+import {
+  SCHEMA_VERSION,
+  slugify,
+  type AdapterConfig,
+  type DocAdapter,
+  type DocModel,
+  type Registry,
+  type RegistryEntry,
+} from "@necronomidoc/docmodel";
 import { mergeEnrichment } from "@necronomidoc/enrichment";
-import { paths, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
+import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
 const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new MarkdownAdapter()];
@@ -123,6 +131,19 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     return { model: merged, entry, adapter: languages.join("+") };
   } finally {
     cleanup?.();
+  }
+}
+
+/** Remove a repo's published docs: its manifests dir + docs-registry entry. */
+export function purgeRepoDocs(dataDir: string, slug: string): void {
+  rmSync(paths.repoDir(dataDir, slug), { recursive: true, force: true });
+  const registry = readRegistry(dataDir);
+  const next: Registry = {
+    schemaVersion: SCHEMA_VERSION,
+    repos: registry.repos.filter((r) => r.slug !== slug),
+  };
+  if (existsSync(paths.registry(dataDir))) {
+    writeFileSync(paths.registry(dataDir), JSON.stringify(next, null, 2));
   }
 }
 

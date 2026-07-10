@@ -5,6 +5,11 @@ import { loadConfig, type NecronomidocConfig } from "./config.js";
 export * from "./config.js";
 export * from "./build.js";
 export { createApp, type App } from "./app.js";
+export * from "./ingest/registry.js";
+export * from "./ingest/providers.js";
+export * from "./ingest/fetch.js";
+export * from "./ingest/queue.js";
+export * from "./ingest/status.js";
 
 /** Start the portable server and return a stop() handle. */
 export function startServer(
@@ -16,6 +21,9 @@ export function startServer(
   return {
     app,
     config,
-    stop: () => server.close(),
+    stop: () => {
+      app.queue.stop();
+      server.close();
+    },
   };
 }

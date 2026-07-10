@@ -1,9 +1,21 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
 import { buildRepo } from "./build.js";
 import type { NecronomidocConfig } from "./config.js";
+import { fetchSource } from "./ingest/fetch.js";
+import {
+  authorizeRestTrigger,
+  verifyAdo,
+  verifyGithub,
+  type ProviderContext,
+  type TriggerResult,
+} from "./ingest/providers.js";
+import { BuildQueue } from "./ingest/queue.js";
+import { getSourceRepo, readSourceRegistry, type SourceRepo } from "./ingest/registry.js";
+import { readBuildStatus, type BuildRecord } from "./ingest/status.js";
+import type { TriggerEvent } from "./ingest/providers.js";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -40,38 +52,171 @@ function fileResponse(absPath: string): Response | null {
 export interface App {
   fetch: (request: Request) => Response | Promise<Response>;
   store: ManifestStore;
+  queue: BuildQueue;
+}
+
+/** Strip admin-only failure detail from a build record. */
+function publicBuildRecord(record: BuildRecord): Omit<BuildRecord, "logTail"> {
+  const { logTail: _logTail, ...rest } = record;
+  return rest;
 }
 
 /**
  * Build the portable server: static site + `/data` manifests + stateless
- * `/mcp` + a minimal build/status API — one Hono app, one process, fs-only
- * state (decisions 0002 + 0008).
+ * `/mcp` + ingestion (webhooks, REST trigger, build queue) and status APIs —
+ * one Hono app, one process, fs-only state (decisions 0002 + 0008).
  */
 export function createApp(config: NecronomidocConfig): App {
   const store = new ManifestStore(config.dataDir);
   store.reload();
 
+  // The full pipeline for one registered repo: fetch → extract → enrich →
+  // atomic publish. Only successful builds publish, so a failure leaves the
+  // previous docs serving.
+  const runBuild = async (repo: SourceRepo, event: TriggerEvent) => {
+    const fetched = fetchSource(repo, config.dataDir);
+    const result = await buildRepo({
+      dataDir: config.dataDir,
+      target: fetched.dir,
+      name: repo.id,
+      adapterConfig: {
+        repoUrl: /^[a-z+]+:\/\/|^git@/i.test(repo.url) ? repo.url : undefined,
+        ref: event.ref,
+        commit: fetched.commitSha,
+      },
+    });
+    return {
+      fileCount: result.entry.fileCount,
+      symbolCount: result.entry.symbolCount,
+      commitSha: fetched.commitSha,
+    };
+  };
+
+  const queue = new BuildQueue({
+    dataDir: config.dataDir,
+    runBuild,
+    onPublished: () => store.reload(), // hot-reload manifests into MCP + /data
+    debounceMs: config.debounceMs,
+    concurrency: config.buildConcurrency,
+    buildTimeoutMs: config.buildTimeoutMs,
+  });
+
+  const providerCtx = (): ProviderContext => ({
+    repos: readSourceRegistry(config.dataDir).repos,
+    env: process.env,
+    sharedSecret: config.webhookSecret || undefined,
+    now: () => new Date().toISOString(),
+  });
+
+  // Verification happened in the provider; here we only queue and respond.
+  // Accepted/ignored answer 202 immediately — no build work in the request
+  // path. Rejections are logged with their reason (acceptance criterion 3).
+  const respondToTrigger = (c: Context, result: TriggerResult): Response => {
+    if (result.kind === "accepted") {
+      const { coalesced } = queue.enqueue(result.event);
+      return Response.json(
+        { accepted: true, repoId: result.event.repoId, coalesced },
+        { status: 202 },
+      );
+    }
+    if (result.kind === "ignored") {
+      return Response.json({ accepted: false, ignored: result.reason }, { status: 202 });
+    }
+    console.warn(`[ingest] rejected ${c.req.method} ${c.req.path}: ${result.reason}`);
+    return Response.json({ error: result.reason }, { status: result.status });
+  };
+
   const app = new Hono();
 
   app.get("/health", (c) => c.json({ ok: true }));
 
-  app.get("/api/status", (c) =>
-    c.json({ dataDir: config.dataDir, repos: store.listRepos() }),
-  );
-
-  // Manual bearer auth — the slice-1 stand-in for provider adapters (slice 2).
-  app.post("/api/build", async (c) => {
-    if (!config.token) return c.json({ error: "Build endpoint disabled (no token set)." }, 403);
+  app.get("/api/status", (c) => {
     const auth = c.req.header("authorization") ?? "";
-    if (auth !== `Bearer ${config.token}`) return c.json({ error: "Unauthorized" }, 401);
-    let body: { repoUrl?: string; path?: string; name?: string; ref?: string };
+    const isAdmin = Boolean(config.token) && auth === `Bearer ${config.token}`;
+    const status = readBuildStatus(config.dataDir);
+    const sources = readSourceRegistry(config.dataDir).repos.map((repo) => {
+      const last = status.builds[repo.id]?.[0];
+      return {
+        id: repo.id,
+        provider: repo.provider,
+        branch: repo.branch,
+        enabled: repo.enabled,
+        lastBuild: last ? (isAdmin ? last : publicBuildRecord(last)) : undefined,
+      };
+    });
+    return c.json({
+      dataDir: config.dataDir,
+      repos: store.listRepos(),
+      sources,
+      queue: { depth: queue.depth(), items: queue.snapshot() },
+    });
+  });
+
+  // GitHub push webhook (HMAC-verified) → normalized trigger → queue.
+  app.post("/hooks/github", async (c) => {
+    const body = await c.req.text();
+    const result = verifyGithub(
+      {
+        body,
+        signature: c.req.header("x-hub-signature-256"),
+        event: c.req.header("x-github-event"),
+      },
+      providerCtx(),
+    );
+    return respondToTrigger(c, result);
+  });
+
+  // Azure DevOps git.push service hook (basic-auth-verified) → queue.
+  app.post("/hooks/ado", async (c) => {
+    const body = await c.req.text();
+    const result = verifyAdo(
+      { body, authorization: c.req.header("authorization") },
+      providerCtx(),
+    );
+    return respondToTrigger(c, result);
+  });
+
+  // Generic REST trigger: `{ repoId }` queues a registered repo (global or
+  // per-repo scoped token). The slice-1 `{ path | repoUrl }` form still works
+  // for ad-hoc builds and requires the global token.
+  app.post("/api/build", async (c) => {
+    let body: { repoId?: string; repoUrl?: string; path?: string; name?: string; ref?: string };
     try {
       body = await c.req.json();
     } catch {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
+
+    if (body.repoId) {
+      const repo = getSourceRepo(config.dataDir, body.repoId);
+      const authorized = authorizeRestTrigger(
+        { authorization: c.req.header("authorization"), repo },
+        { ...providerCtx(), globalToken: config.token || undefined },
+      );
+      if (!authorized) {
+        console.warn(`[ingest] rejected POST /api/build for "${body.repoId}": bad or missing token`);
+        return c.json({ error: "Unauthorized" }, 401);
+      }
+      if (!repo) return c.json({ error: `Unknown repoId "${body.repoId}"` }, 404);
+      const result: TriggerResult = repo.enabled
+        ? {
+            kind: "accepted",
+            event: {
+              repoId: repo.id,
+              ref: body.ref ?? repo.branch,
+              provider: "generic",
+              receivedAt: new Date().toISOString(),
+            },
+          }
+        : { kind: "ignored", reason: `repo "${repo.id}" is disabled` };
+      return respondToTrigger(c, result);
+    }
+
+    if (!config.token) return c.json({ error: "Build endpoint disabled (no token set)." }, 403);
+    const auth = c.req.header("authorization") ?? "";
+    if (auth !== `Bearer ${config.token}`) return c.json({ error: "Unauthorized" }, 401);
     const target = body.repoUrl ?? body.path;
-    if (!target) return c.json({ error: "Provide { repoUrl | path }" }, 400);
+    if (!target) return c.json({ error: "Provide { repoId | repoUrl | path }" }, 400);
     try {
       const result = await buildRepo({
         dataDir: config.dataDir,
@@ -118,5 +263,5 @@ export function createApp(config: NecronomidocConfig): App {
     );
   });
 
-  return { fetch: app.fetch, store };
+  return { fetch: app.fetch, store, queue };
 }

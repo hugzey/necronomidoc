@@ -6,10 +6,21 @@ export interface NecronomidocConfig {
   dataDir: string;
   /** HTTP port for `serve`. */
   port: number;
-  /** Bearer token required by POST /api/build. Empty disables the endpoint. */
+  /**
+   * Admin bearer token: authorizes POST /api/build for any repo and unlocks
+   * failure detail on /api/status. Empty disables both.
+   */
   token: string;
   /** Directory of the built static site (SPA). */
   siteDir: string;
+  /** Shared fallback webhook secret; a repo's `secretEnv` takes precedence. */
+  webhookSecret: string;
+  /** Debounce window for coalescing rapid pushes (ms). */
+  debounceMs: number;
+  /** Global cap on concurrent builds. */
+  buildConcurrency: number;
+  /** Per-build timeout (ms). */
+  buildTimeoutMs: number;
 }
 
 const DEFAULTS: NecronomidocConfig = {
@@ -17,6 +28,10 @@ const DEFAULTS: NecronomidocConfig = {
   port: 4319,
   token: "",
   siteDir: "packages/site/dist",
+  webhookSecret: "",
+  debounceMs: 10_000,
+  buildConcurrency: 1,
+  buildTimeoutMs: 10 * 60_000,
 };
 
 /**
@@ -39,6 +54,12 @@ export function loadConfig(overrides: Partial<NecronomidocConfig> = {}): Necrono
   if (process.env.PORT) env.port = Number.parseInt(process.env.PORT, 10);
   if (process.env.DOCS_TOKEN) env.token = process.env.DOCS_TOKEN;
   if (process.env.SITE_DIR) env.siteDir = process.env.SITE_DIR;
+  if (process.env.DOCS_WEBHOOK_SECRET) env.webhookSecret = process.env.DOCS_WEBHOOK_SECRET;
+  if (process.env.DOCS_DEBOUNCE_MS) env.debounceMs = Number.parseInt(process.env.DOCS_DEBOUNCE_MS, 10);
+  if (process.env.DOCS_BUILD_CONCURRENCY)
+    env.buildConcurrency = Number.parseInt(process.env.DOCS_BUILD_CONCURRENCY, 10);
+  if (process.env.DOCS_BUILD_TIMEOUT_MS)
+    env.buildTimeoutMs = Number.parseInt(process.env.DOCS_BUILD_TIMEOUT_MS, 10);
 
   const defined = <T extends object>(o: T): Partial<T> =>
     Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
