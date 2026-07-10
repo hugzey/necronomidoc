@@ -2,6 +2,18 @@ import type { DocFile, DocModel, DocSymbolShape, Registry } from "@necronomidoc/
 
 export type { DocFile, DocModel, DocSymbolShape, Registry };
 
+/**
+ * Static-export mode: a build script can inline the manifests as a global so
+ * the whole site works as one self-contained HTML file with no server.
+ */
+interface InjectedData {
+  registry: Registry;
+  models: Record<string, DocModel>;
+}
+export function injectedData(): InjectedData | undefined {
+  return (globalThis as { __NECRO_DATA__?: InjectedData }).__NECRO_DATA__;
+}
+
 const cache = new Map<string, unknown>();
 
 async function getJson<T>(url: string): Promise<T> {
@@ -14,10 +26,17 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export function fetchRegistry(): Promise<Registry> {
+  const injected = injectedData();
+  if (injected) return Promise.resolve(injected.registry);
   return getJson<Registry>("/data/registry.json");
 }
 
 export function fetchModel(slug: string): Promise<DocModel> {
+  const injected = injectedData();
+  if (injected) {
+    const model = injected.models[slug];
+    return model ? Promise.resolve(model) : Promise.reject(new Error(`no model for ${slug}`));
+  }
   return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
 }
 

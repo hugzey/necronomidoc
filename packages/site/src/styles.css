@@ -18,6 +18,25 @@
     --accent: #b794f6;
   }
 }
+/* Explicit theme stamps (e.g. a host page's toggle) beat the OS preference. */
+:root[data-theme="dark"] {
+  --bg: #14141a;
+  --fg: #e6e6e6;
+  --muted: #9a9a9a;
+  --border: #2c2c36;
+  --code-bg: #1e1e28;
+  --link: #7aa2ff;
+  --accent: #b794f6;
+}
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #e2e2e2;
+  --code-bg: #f5f5f5;
+  --link: #2563eb;
+  --accent: #6d28d9;
+}
 
 * { box-sizing: border-box; }
 body {
