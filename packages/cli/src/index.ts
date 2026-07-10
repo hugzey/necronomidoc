@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { DocModel, exportJsonSchemas, slugify } from "@necronomidoc/docmodel";
 import {
   buildRepo,
+  KNOWN_PROVIDERS,
   loadConfig,
   purgeRepoDocs,
   readSourceRegistry,
@@ -114,11 +115,20 @@ function cmdRepo(flags: Flags): number {
         console.error("repo add: missing <url-or-path>");
         return 1;
       }
+      const provider = str(flags, "provider") ?? "generic";
+      if (!KNOWN_PROVIDERS.includes(provider)) {
+        console.error(`repo add: unknown provider "${provider}" (known: ${KNOWN_PROVIDERS.join(", ")})`);
+        return 1;
+      }
       const id = str(flags, "id") ?? slugify(arg);
+      if (slugify(id) !== id) {
+        console.error(`repo add: id "${id}" is not a slug — try "--id ${slugify(id)}"`);
+        return 1;
+      }
       const repo = upsertSourceRepo(config.dataDir, {
         id,
         name: str(flags, "name"),
-        provider: str(flags, "provider") ?? "generic",
+        provider,
         url: arg,
         branch: str(flags, "branch") ?? "main",
         secretEnv: str(flags, "secret-env"),

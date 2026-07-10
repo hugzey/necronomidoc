@@ -155,4 +155,43 @@ describe("BuildQueue", () => {
     await queue.drain();
     expect(readBuildStatus(dataDir).builds["ghost"]![0]).toMatchObject({ result: "error" });
   });
+
+  it("does not starve a due repo while another repo keeps receiving pushes", async () => {
+    const built: string[] = [];
+    const queue = makeQueue({
+      debounceMs: 60,
+      runBuild: async (repoId) => {
+        built.push(repoId);
+        return {};
+      },
+    });
+    queue.enqueue(event("alpha", "a1"));
+    // Beta pushes every 20ms — each restarts beta's debounce, but must never
+    // postpone alpha's already-armed deadline.
+    const churn = setInterval(() => queue.enqueue(event("beta", `b${Date.now()}`)), 20);
+    await sleep(150);
+    clearInterval(churn);
+    expect(built).toContain("alpha"); // built at ~60ms despite beta churn
+    await queue.drain();
+  });
+
+  it("withRepoLock serializes ad-hoc builds against queued builds of the same repo", async () => {
+    const order: string[] = [];
+    const queue = makeQueue({
+      debounceMs: 1,
+      runBuild: async () => {
+        order.push("queued-start");
+        await sleep(60);
+        order.push("queued-end");
+        return {};
+      },
+    });
+    queue.enqueue(event("alpha"));
+    await sleep(20); // queued build is now running
+    await queue.withRepoLock("alpha", async () => {
+      order.push("adhoc");
+    });
+    expect(order).toEqual(["queued-start", "queued-end", "adhoc"]);
+    await queue.drain();
+  });
 });

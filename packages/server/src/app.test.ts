@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -70,5 +70,13 @@ describe("server app", () => {
       new Request("http://x/api/build", { method: "POST", body: "{}" }),
     );
     expect(res.status).toBe(403); // token disabled by default
+  });
+
+  it("keeps serving status when repos.json is corrupt (hand-edited)", async () => {
+    writeFileSync(join(dataDir, "repos.json"), "{ definitely not json");
+    const res = await app.fetch(new Request("http://x/api/status"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sources: unknown[] };
+    expect(body.sources).toEqual([]); // corrupt registry degrades, never 500s
   });
 });

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { slugify } from "@necronomidoc/docmodel";
 import { z } from "zod";
 
 /**
@@ -8,8 +9,15 @@ import { z } from "zod";
  * lands in this file, in logs, or in any manifest.
  */
 export const SourceRepo = z.object({
-  /** Stable identifier; doubles as the docs slug and the clone dir name. */
-  id: z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, "id must be a lowercase slug"),
+  /**
+   * Stable identifier; doubles as the docs slug and the clone dir name.
+   * Must be slug-stable (`slugify(id) === id`) so the published docs land
+   * under exactly this id — otherwise purge/lookup would target the wrong dir.
+   */
+  id: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "id must be a lowercase slug (letters, digits, dashes)")
+    .refine((id) => slugify(id) === id, "id must be slug-stable (no leading/trailing/double dashes)"),
   /** Display name (defaults to id). */
   name: z.string().optional(),
   /** Which trigger path fires builds for this repo. */
@@ -40,10 +48,28 @@ export function sourceRegistryPath(dataDir: string): string {
   return join(dataDir, "repos.json");
 }
 
+/**
+ * Strict read — throws on a malformed file. Used by mutations so a corrupt
+ * registry surfaces as an error instead of being silently clobbered.
+ */
 export function readSourceRegistry(dataDir: string): SourceRegistry {
   const file = sourceRegistryPath(dataDir);
   if (!existsSync(file)) return { schemaVersion: 1, repos: [] };
   return SourceRegistry.parse(JSON.parse(readFileSync(file, "utf8")));
+}
+
+/**
+ * Lenient read for serving paths (status, webhooks, triggers): repos.json is
+ * documented as hand-editable, and one typo must not 500 every ingestion
+ * endpoint — log it and serve an empty registry until the file is fixed.
+ */
+export function safeReadSourceRegistry(dataDir: string): SourceRegistry {
+  try {
+    return readSourceRegistry(dataDir);
+  } catch (err) {
+    console.warn(`[ingest] ignoring unreadable repos.json: ${(err as Error).message}`);
+    return { schemaVersion: 1, repos: [] };
+  }
 }
 
 export function writeSourceRegistry(dataDir: string, registry: SourceRegistry): void {
@@ -52,7 +78,7 @@ export function writeSourceRegistry(dataDir: string, registry: SourceRegistry): 
 }
 
 export function getSourceRepo(dataDir: string, id: string): SourceRepo | undefined {
-  return readSourceRegistry(dataDir).repos.find((r) => r.id === id);
+  return safeReadSourceRegistry(dataDir).repos.find((r) => r.id === id);
 }
 
 /** Add or replace a repo entry. Returns the stored (validated) entry. */

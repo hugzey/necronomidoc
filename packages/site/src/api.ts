@@ -1,4 +1,10 @@
-import type { DocFile, DocModel, DocSymbolShape, Registry } from "@necronomidoc/docmodel";
+import type {
+  DocFile,
+  DocModel,
+  DocSymbolShape,
+  IngestStatusResponse,
+  Registry,
+} from "@necronomidoc/docmodel";
 
 export type { DocFile, DocModel, DocSymbolShape, Registry };
 
@@ -42,35 +48,8 @@ export function fetchModel(slug: string): Promise<DocModel> {
 
 // ---- Ingestion status (slice 2) ----
 
-export interface StatusBuild {
-  repoId: string;
-  ref: string;
-  commitSha?: string;
-  trigger: string;
-  startedAt: string;
-  durationMs: number;
-  result: "ok" | "error";
-  error?: string;
-  fileCount?: number;
-  symbolCount?: number;
-}
-
-export interface StatusSource {
-  id: string;
-  provider: string;
-  branch: string;
-  enabled: boolean;
-  lastBuild?: StatusBuild;
-}
-
-export interface StatusResponse {
-  repos: Registry["repos"];
-  sources: StatusSource[];
-  queue: {
-    depth: number;
-    items: { repoId: string; provider: string; state: string; receivedAt: string }[];
-  };
-}
+// The wire types live in docmodel, shared with the server that produces them.
+export type StatusResponse = IngestStatusResponse;
 
 /**
  * Live server status — never cached, and unavailable in static-export mode

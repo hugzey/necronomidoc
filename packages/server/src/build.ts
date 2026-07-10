@@ -53,7 +53,8 @@ export interface BuildResult {
   adapter: string;
 }
 
-function isLocalDir(target: string): boolean {
+/** Is the target an existing local directory (build in place, no clone)? */
+export function isLocalDir(target: string): boolean {
   try {
     return statSync(target).isDirectory();
   } catch {
@@ -61,8 +62,9 @@ function isLocalDir(target: string): boolean {
   }
 }
 
-function looksLikeGitUrl(target: string): boolean {
-  return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/.test(target) || target.endsWith(".git");
+/** Does the target look like a remote git URL (clone required)? */
+export function looksLikeGitUrl(target: string): boolean {
+  return /^(https?:\/\/|file:\/\/|git@|ssh:\/\/|git:\/\/)/.test(target) || target.endsWith(".git");
 }
 
 /** Shallow-clone a repo to a temp dir. Returns [dir, cleanup]. */
@@ -135,7 +137,9 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
 }
 
 /** Remove a repo's published docs: its manifests dir + docs-registry entry. */
-export function purgeRepoDocs(dataDir: string, slug: string): void {
+export function purgeRepoDocs(dataDir: string, idOrSlug: string): void {
+  // Docs publish under slugify(name); legacy ids may not be slug-stable.
+  const slug = slugify(idOrSlug);
   rmSync(paths.repoDir(dataDir, slug), { recursive: true, force: true });
   const registry = readRegistry(dataDir);
   const next: Registry = {

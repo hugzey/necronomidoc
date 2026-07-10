@@ -47,12 +47,19 @@ export function queueJournalPath(dataDir: string): string {
  * global cap bounds total concurrency. Failures are captured to the status
  * file and the repo keeps serving its last good docs (the pipeline only
  * publishes atomically on success).
+ *
+ * Scheduling: a single timer is armed for the *earliest future* deadline and
+ * never pushed later by new triggers (no starvation). Items that are due but
+ * blocked — by the concurrency cap or by a running build of the same repo —
+ * need no timer at all: the blocking build's release re-runs `tick()`.
  */
 export class BuildQueue {
   private items: QueueItem[] = [];
   /** repoIds with a build in flight (held until the build promise settles). */
   private readonly running = new Set<string>();
   private timer: NodeJS.Timeout | undefined;
+  private timerDeadline = Infinity;
+  private idleWaiters: (() => void)[] = [];
   private stopped = false;
   private readonly debounceMs: number;
   private readonly concurrency: number;
@@ -86,7 +93,8 @@ export class BuildQueue {
     }
     if (this.items.length > 0) {
       this.log(`[queue] restored ${this.items.length} journaled trigger(s)`);
-      this.schedule(0);
+      // Defer the first tick so builds never start inside the constructor.
+      this.armTimerAt(Date.now());
     }
   }
 
@@ -116,7 +124,7 @@ export class BuildQueue {
       this.items.push({ ...event, notBefore, state: "pending" });
     }
     this.journal();
-    this.schedule(this.debounceMs);
+    this.tick(); // starts anything already due and re-arms the timer
     return { coalesced };
   }
 
@@ -135,9 +143,26 @@ export class BuildQueue {
   }
 
   /** Resolves once the queue is fully drained (tests / graceful shutdown). */
-  async drain(pollMs = 25): Promise<void> {
-    while (this.items.length > 0 || this.running.size > 0) {
-      await new Promise((r) => setTimeout(r, pollMs));
+  drain(): Promise<void> {
+    if (this.isIdle()) return Promise.resolve();
+    return new Promise<void>((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  /**
+   * Serialize an ad-hoc build (a target with no registry entry, e.g. the
+   * legacy `/api/build {path}` form) against queued builds that would publish
+   * under the same slug.
+   */
+  async withRepoLock<T>(repoId: string, fn: () => Promise<T>): Promise<T> {
+    while (this.running.has(repoId)) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    this.running.add(repoId);
+    try {
+      return await fn();
+    } finally {
+      this.running.delete(repoId);
+      this.tick();
     }
   }
 
@@ -147,10 +172,27 @@ export class BuildQueue {
     this.timer = undefined;
   }
 
-  private schedule(delayMs: number): void {
+  private isIdle(): boolean {
+    return this.items.length === 0 && this.running.size === 0;
+  }
+
+  private maybeResolveIdle(): void {
+    if (this.isIdle()) {
+      for (const waiter of this.idleWaiters.splice(0)) waiter();
+    }
+  }
+
+  /** Arm the single timer, only ever moving its deadline *earlier*. */
+  private armTimerAt(deadline: number): void {
     if (this.stopped) return;
+    if (this.timer && this.timerDeadline <= deadline) return;
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.tick(), delayMs);
+    this.timerDeadline = deadline;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      this.timerDeadline = Infinity;
+      this.tick();
+    }, Math.max(0, deadline - Date.now()));
     this.timer.unref?.();
   }
 
@@ -166,11 +208,14 @@ export class BuildQueue {
       this.journal();
       void this.run(item);
     }
-    // Wake up again for the earliest still-pending item.
-    const waits = this.items
-      .filter((i) => i.state === "pending" && !this.running.has(i.repoId))
-      .map((i) => i.notBefore - now);
-    if (waits.length > 0) this.schedule(Math.max(0, Math.min(...waits)));
+    // A timer is only needed for items whose debounce lies in the future.
+    // Due-but-blocked items are re-examined when the blocking build settles
+    // (its release calls tick()), so no polling and no busy-loop.
+    const future = this.items
+      .filter((i) => i.state === "pending" && i.notBefore > now)
+      .map((i) => i.notBefore);
+    if (future.length > 0) this.armTimerAt(Math.min(...future));
+    this.maybeResolveIdle();
   }
 
   private finish(item: QueueItem): void {
@@ -227,6 +272,7 @@ export class BuildQueue {
     } finally {
       this.finish(item);
       release();
+      this.maybeResolveIdle();
     }
   }
 }

@@ -27,9 +27,9 @@ it by hand. Fields:
 
 | Field | Meaning |
 |-------|---------|
-| `id` | Stable slug; doubles as the docs slug and clone dir name |
+| `id` | Stable slug (lowercase letters/digits/dashes); doubles as the docs slug and clone dir name |
 | `provider` | `github` \| `ado` \| `generic` — which trigger path fires builds |
-| `url` | Clone URL (https/ssh) or a local directory path |
+| `url` | Clone URL (https/ssh) or a local directory path. Register the exact clone URL — a webhook payload that ambiguously matches several registered repos is rejected. ADO SSH URLs (`git@ssh.dev.azure.com:v3/…`) match their https service-hook form automatically |
 | `branch` | Tracked branch; pushes to anything else are ignored |
 | `secretEnv` | **Env var name** holding the webhook secret / hook credential |
 | `tokenEnv` | **Env var name** holding the git PAT used to clone/fetch |
@@ -86,8 +86,8 @@ curl -X POST https://<your-server>/api/build \
 
 `$TOKEN` is either the global admin token (`DOCS_TOKEN`) or a per-repo token
 (the value of the var named in that repo's `apiTokenEnv` — scoped to that repo
-only). The slice-1 ad-hoc form `{"path":…}` / `{"repoUrl":…}` still works and
-requires the global token.
+only). Builds always target the repo's tracked branch. The slice-1 ad-hoc form
+`{"path":…}` / `{"repoUrl":…}` still works and requires the global token.
 
 ## 5. Queue behavior
 
@@ -112,6 +112,9 @@ requires the global token.
   `authorization: Bearer <DOCS_TOKEN>`.
 - The doc site has a matching **Build status** page (link at the bottom of the
   sidebar, `/status`), which polls the same JSON.
+- `GET /data/*` serves **only** the published manifests (`registry.json` and
+  `repos/**`). Clones, build logs, and queue/registry state live in the same
+  data dir but are never served.
 
 ## Env var summary
 

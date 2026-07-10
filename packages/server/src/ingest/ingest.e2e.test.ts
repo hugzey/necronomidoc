@@ -133,6 +133,19 @@ describe("automated ingestion end-to-end", () => {
     expect(model.repo.commit).toBe(sha);
   }, 60_000);
 
+  it("serves only published manifests under /data — never clones, logs, or queue state", async () => {
+    const get = (path: string) => app.fetch(new Request(`http://x${path}`));
+    // Public manifests stay reachable…
+    expect((await get("/data/registry.json")).status).toBe(200);
+    expect((await get("/data/repos/e2e-repo/docmodel.json")).status).toBe(200);
+    // …but private state under the same data dir is not.
+    expect((await get("/data/status.json")).status).toBe(404); // admin-gated logTail lives here
+    expect((await get("/data/repos.json")).status).toBe(404);
+    expect((await get("/data/queue.json")).status).toBe(404);
+    expect((await get("/data/clones/e2e-repo/package.json")).status).toBe(404); // repo source
+    expect((await get("/data/repos/../clones/e2e-repo/package.json")).status).toBe(404); // no traversal
+  });
+
   it("rejects forged webhooks and leaves the queue untouched", async () => {
     const body = githubPush(srcUrl, "refs/heads/main", "deadbeef");
     const res = await post("/hooks/github", body, {

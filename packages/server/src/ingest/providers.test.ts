@@ -198,6 +198,68 @@ describe("verifyAdo", () => {
     );
     expect(result).toMatchObject({ kind: "ignored" });
   });
+
+  it("finds the tracked branch in a multi-ref push, wherever it sits", () => {
+    const body = adoPush({
+      resource: {
+        repository: { remoteUrl: "https://dev.azure.com/acme/proj/_git/gadgets" },
+        refUpdates: [
+          { name: "refs/heads/feature/x", newObjectId: "aaa111" },
+          { name: "refs/heads/main", newObjectId: "bbb222" },
+        ],
+      },
+    });
+    const result = verifyAdo({ body, authorization: basic("hookuser:hookpass") }, ctx());
+    expect(result).toMatchObject({
+      kind: "accepted",
+      event: { repoId: "gadgets", ref: "main", commitSha: "bbb222" },
+    });
+  });
+
+  it("matches a repo registered by its SSH URL against the hook's https remoteUrl", () => {
+    const sshRepo: SourceRepo = {
+      ...adoRepo,
+      id: "gadgets-ssh",
+      url: "git@ssh.dev.azure.com:v3/acme/proj/gadgets",
+      secretEnv: "GADGETS_SECRET",
+    };
+    const result = verifyAdo(
+      { body: adoPush(), authorization: basic("hookuser:hookpass") },
+      ctx({ repos: [sshRepo] }),
+    );
+    expect(result).toMatchObject({ kind: "accepted", event: { repoId: "gadgets-ssh" } });
+  });
+});
+
+describe("repo identity resolution", () => {
+  it("prefers an exact clone-URL match over a bare full-name suffix match", () => {
+    const mirror: SourceRepo = {
+      ...githubRepo,
+      id: "widgets-mirror",
+      url: "https://mirror.example.com/acme/widgets.git",
+    };
+    const body = githubPush(); // clone_url matches githubRepo exactly; full_name suffix-matches both
+    const result = verifyGithub(
+      { body, signature: sign(body, "gh-secret"), event: "push" },
+      ctx({ repos: [mirror, githubRepo] }),
+    );
+    expect(result).toMatchObject({ kind: "accepted", event: { repoId: "widgets" } });
+  });
+
+  it("rejects a payload that ambiguously matches several repos", () => {
+    const mirror: SourceRepo = {
+      ...githubRepo,
+      id: "widgets-mirror",
+      url: "https://mirror.example.com/acme/widgets.git",
+    };
+    // Only a full_name candidate: suffix-matches both registered repos.
+    const body = githubPush({ repository: { full_name: "acme/widgets" } });
+    const result = verifyGithub(
+      { body, signature: sign(body, "gh-secret"), event: "push" },
+      ctx({ repos: [mirror, githubRepo] }),
+    );
+    expect(result).toMatchObject({ kind: "rejected", status: 409 });
+  });
 });
 
 describe("authorizeRestTrigger", () => {

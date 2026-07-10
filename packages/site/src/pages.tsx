@@ -33,10 +33,14 @@ function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data?: T; error?:
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
   useEffect(() => {
     let live = true;
-    setState({ loading: true });
+    // Keep the previous data while refetching so polled views (StatusView)
+    // update in place instead of flashing back to a spinner.
+    setState((s) => ({ ...s, loading: true }));
     fn()
       .then((data) => live && setState({ data, loading: false }))
-      .catch((err: unknown) => live && setState({ error: String(err), loading: false }));
+      .catch(
+        (err: unknown) => live && setState((s) => ({ data: s.data, error: String(err), loading: false })),
+      );
     return () => {
       live = false;
     };
@@ -152,7 +156,7 @@ export function StatusView() {
   const { data, error, loading } = useAsync<StatusResponse | undefined>(fetchStatus, [tick]);
 
   if (loading && !data) return <Loading />;
-  if (error) return <div className="alert alert-error">Failed to load status: {error}</div>;
+  if (error && !data) return <div className="alert alert-error">Failed to load status: {error}</div>;
   if (!data) {
     return (
       <div className="alert alert-info">

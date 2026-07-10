@@ -1,21 +1,33 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { Hono, type Context } from "hono";
+import { slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
 import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
-import { buildRepo } from "./build.js";
+import { buildRepo, looksLikeGitUrl } from "./build.js";
 import type { NecronomidocConfig } from "./config.js";
 import { fetchSource } from "./ingest/fetch.js";
 import {
   authorizeRestTrigger,
-  verifyAdo,
-  verifyGithub,
+  providers,
+  verifyWebhook,
   type ProviderContext,
+  type TriggerEvent,
   type TriggerResult,
 } from "./ingest/providers.js";
 import { BuildQueue } from "./ingest/queue.js";
-import { getSourceRepo, readSourceRegistry, type SourceRepo } from "./ingest/registry.js";
-import { readBuildStatus, type BuildRecord } from "./ingest/status.js";
-import type { TriggerEvent } from "./ingest/providers.js";
+import {
+  getSourceRepo,
+  safeReadSourceRegistry,
+  sourceRegistryPath,
+  type SourceRegistry,
+  type SourceRepo,
+} from "./ingest/registry.js";
+import {
+  buildStatusPath,
+  readBuildStatus,
+  type BuildRecord,
+  type BuildStatusFile,
+} from "./ingest/status.js";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -62,6 +74,25 @@ function publicBuildRecord(record: BuildRecord): Omit<BuildRecord, "logTail"> {
 }
 
 /**
+ * Re-read a JSON state file only when its mtime changes. All in-process
+ * writers go through the filesystem, and out-of-process writers (the CLI)
+ * are covered by the mtime check — so serving paths stop paying a disk read
+ * + schema parse per request (the site polls /api/status every 5s per tab).
+ */
+function mtimeCached<T>(path: string, read: () => T): () => T {
+  let mtime = Number.NaN;
+  let cached: T | undefined;
+  return () => {
+    const m = statSync(path, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+    if (cached === undefined || m !== mtime) {
+      cached = read();
+      mtime = m;
+    }
+    return cached;
+  };
+}
+
+/**
  * Build the portable server: static site + `/data` manifests + stateless
  * `/mcp` + ingestion (webhooks, REST trigger, build queue) and status APIs —
  * one Hono app, one process, fs-only state (decisions 0002 + 0008).
@@ -74,13 +105,13 @@ export function createApp(config: NecronomidocConfig): App {
   // atomic publish. Only successful builds publish, so a failure leaves the
   // previous docs serving.
   const runBuild = async (repo: SourceRepo, event: TriggerEvent) => {
-    const fetched = fetchSource(repo, config.dataDir);
+    const fetched = await fetchSource(repo, config.dataDir);
     const result = await buildRepo({
       dataDir: config.dataDir,
       target: fetched.dir,
       name: repo.id,
       adapterConfig: {
-        repoUrl: /^[a-z+]+:\/\/|^git@/i.test(repo.url) ? repo.url : undefined,
+        repoUrl: looksLikeGitUrl(repo.url) ? repo.url : undefined,
         ref: event.ref,
         commit: fetched.commitSha,
       },
@@ -101,12 +132,29 @@ export function createApp(config: NecronomidocConfig): App {
     buildTimeoutMs: config.buildTimeoutMs,
   });
 
+  // State files re-read only when their mtime moves (the CLI edits them
+  // out-of-process; everything else writes through these same paths).
+  const cachedRegistry: () => SourceRegistry = mtimeCached(
+    sourceRegistryPath(config.dataDir),
+    () => safeReadSourceRegistry(config.dataDir),
+  );
+  const cachedStatus: () => BuildStatusFile = mtimeCached(buildStatusPath(config.dataDir), () =>
+    readBuildStatus(config.dataDir),
+  );
+
   const providerCtx = (): ProviderContext => ({
-    repos: readSourceRegistry(config.dataDir).repos,
+    repos: cachedRegistry().repos,
     env: process.env,
     sharedSecret: config.webhookSecret || undefined,
     now: () => new Date().toISOString(),
   });
+
+  /** Constant-time global-token check (same code path as the REST trigger). */
+  const isAdminRequest = (c: Context): boolean =>
+    authorizeRestTrigger(
+      { authorization: c.req.header("authorization") },
+      { repos: [], env: process.env, now: () => "", globalToken: config.token || undefined },
+    );
 
   // Verification happened in the provider; here we only queue and respond.
   // Accepted/ignored answer 202 immediately — no build work in the request
@@ -131,10 +179,9 @@ export function createApp(config: NecronomidocConfig): App {
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.get("/api/status", (c) => {
-    const auth = c.req.header("authorization") ?? "";
-    const isAdmin = Boolean(config.token) && auth === `Bearer ${config.token}`;
-    const status = readBuildStatus(config.dataDir);
-    const sources = readSourceRegistry(config.dataDir).repos.map((repo) => {
+    const isAdmin = isAdminRequest(c);
+    const status = cachedStatus();
+    const sources = cachedRegistry().repos.map((repo) => {
       const last = status.builds[repo.id]?.[0];
       return {
         id: repo.id,
@@ -144,42 +191,37 @@ export function createApp(config: NecronomidocConfig): App {
         lastBuild: last ? (isAdmin ? last : publicBuildRecord(last)) : undefined,
       };
     });
-    return c.json({
+    const response: IngestStatusResponse = {
       dataDir: config.dataDir,
       repos: store.listRepos(),
       sources,
       queue: { depth: queue.depth(), items: queue.snapshot() },
-    });
+    };
+    return c.json(response);
   });
 
-  // GitHub push webhook (HMAC-verified) → normalized trigger → queue.
-  app.post("/hooks/github", async (c) => {
+  // Provider webhooks (decision 0001): one route, one adapter per provider —
+  // /hooks/github (HMAC-verified push), /hooks/ado (basic-auth git.push), and
+  // any future adapter added to `providers` with no route changes.
+  app.post("/hooks/:provider", async (c) => {
+    const provider = providers[c.req.param("provider")];
+    if (!provider) return c.notFound();
     const body = await c.req.text();
-    const result = verifyGithub(
-      {
-        body,
-        signature: c.req.header("x-hub-signature-256"),
-        event: c.req.header("x-github-event"),
-      },
-      providerCtx(),
-    );
-    return respondToTrigger(c, result);
-  });
-
-  // Azure DevOps git.push service hook (basic-auth-verified) → queue.
-  app.post("/hooks/ado", async (c) => {
-    const body = await c.req.text();
-    const result = verifyAdo(
-      { body, authorization: c.req.header("authorization") },
-      providerCtx(),
-    );
-    return respondToTrigger(c, result);
+    const headers = { get: (name: string) => c.req.header(name) };
+    return respondToTrigger(c, verifyWebhook(provider, body, headers, providerCtx()));
   });
 
   // Generic REST trigger: `{ repoId }` queues a registered repo (global or
   // per-repo scoped token). The slice-1 `{ path | repoUrl }` form still works
   // for ad-hoc builds and requires the global token.
   app.post("/api/build", async (c) => {
+    // No credential at all → reject before even reading the body, so
+    // unauthenticated probes cost nothing and can't feed us huge payloads.
+    if (!c.req.header("authorization")) {
+      if (!config.token) return c.json({ error: "Build endpoint disabled (no token set)." }, 403);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     let body: { repoId?: string; repoUrl?: string; path?: string; name?: string; ref?: string };
     try {
       body = await c.req.json();
@@ -198,12 +240,14 @@ export function createApp(config: NecronomidocConfig): App {
         return c.json({ error: "Unauthorized" }, 401);
       }
       if (!repo) return c.json({ error: `Unknown repoId "${body.repoId}"` }, 404);
+      // Always the tracked branch: fetchSource checks out repo.branch, so a
+      // caller-supplied ref would only mislabel docs it didn't change.
       const result: TriggerResult = repo.enabled
         ? {
             kind: "accepted",
             event: {
               repoId: repo.id,
-              ref: body.ref ?? repo.branch,
+              ref: repo.branch,
               provider: "generic",
               receivedAt: new Date().toISOString(),
             },
@@ -213,17 +257,21 @@ export function createApp(config: NecronomidocConfig): App {
     }
 
     if (!config.token) return c.json({ error: "Build endpoint disabled (no token set)." }, 403);
-    const auth = c.req.header("authorization") ?? "";
-    if (auth !== `Bearer ${config.token}`) return c.json({ error: "Unauthorized" }, 401);
+    if (!isAdminRequest(c)) return c.json({ error: "Unauthorized" }, 401);
     const target = body.repoUrl ?? body.path;
     if (!target) return c.json({ error: "Provide { repoId | repoUrl | path }" }, 400);
     try {
-      const result = await buildRepo({
-        dataDir: config.dataDir,
-        target,
-        name: body.name,
-        ref: body.ref,
-      });
+      // Serialize against queued builds that would publish under the same
+      // slug — ad-hoc and queued builds must never race the atomic swap.
+      const slug = slugify(body.name ?? target);
+      const result = await queue.withRepoLock(slug, () =>
+        buildRepo({
+          dataDir: config.dataDir,
+          target,
+          name: body.name,
+          ref: body.ref,
+        }),
+      );
       store.reload(); // hot-reload manifests into the MCP handler
       return c.json({ ok: true, repo: result.entry, adapter: result.adapter });
     } catch (err) {
@@ -234,13 +282,22 @@ export function createApp(config: NecronomidocConfig): App {
   // Stateless MCP endpoint (fetch-portable).
   app.all("/mcp", (c) => handleMcpRequest(store, c.req.raw));
 
-  // Manifests, consumed by the SPA and available to any client.
+  // Published manifests, consumed by the SPA and available to any client.
+  // Deny-by-default allowlist: the data dir also holds clones of possibly
+  // private repos, build logs (admin-gated on /api/status), and queue state —
+  // none of which may be served unauthenticated.
   app.get("/data/*", (c) => {
     const rel = c.req.path.slice("/data/".length);
     const abs = safeJoin(config.dataDir, rel);
     if (abs) {
-      const res = fileResponse(abs);
-      if (res) return res;
+      // Allowlist on the *resolved* path so ../ tricks can't sidestep it.
+      const allowed =
+        abs === resolve(config.dataDir, "registry.json") ||
+        abs.startsWith(resolve(config.dataDir, "repos") + sep);
+      if (allowed) {
+        const res = fileResponse(abs);
+        if (res) return res;
+      }
     }
     return c.notFound();
   });
