@@ -1,91 +1,42 @@
-:root {
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #666;
-  --border: #e2e2e2;
-  --code-bg: #f5f5f5;
-  --link: #2563eb;
-  --accent: #6d28d9;
+@import "tailwindcss";
+
+/* daisyUI is the component base for this project (decision 0010).
+   `light` is the default; `dark` follows the OS preference. Explicit
+   data-theme stamps on <html> (e.g. a host page's toggle) win over both. */
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14141a;
-    --fg: #e6e6e6;
-    --muted: #9a9a9a;
-    --border: #2c2c36;
-    --code-bg: #1e1e28;
-    --link: #7aa2ff;
-    --accent: #b794f6;
+
+/* Inline code in prose (not inside <pre>). */
+code:not(pre code) {
+  background: var(--color-base-200);
+  border-radius: var(--radius-selector, 0.25rem);
+  padding: 0.1em 0.35em;
+  font-size: 0.875em;
+}
+
+/* Cross-reference links inside code/text keep code styling but read as links. */
+a.xref {
+  color: var(--color-primary);
+}
+a.xref:hover {
+  text-decoration: underline;
+}
+a.xref code {
+  color: var(--color-primary);
+}
+
+/* Brief highlight when a symbol card is jumped to via an anchor link. */
+.anchor-flash {
+  animation: anchor-flash 1.2s ease-out;
+}
+@keyframes anchor-flash {
+  from {
+    background-color: color-mix(in oklab, var(--color-warning) 25%, transparent);
   }
 }
-/* Explicit theme stamps (e.g. a host page's toggle) beat the OS preference. */
-:root[data-theme="dark"] {
-  --bg: #14141a;
-  --fg: #e6e6e6;
-  --muted: #9a9a9a;
-  --border: #2c2c36;
-  --code-bg: #1e1e28;
-  --link: #7aa2ff;
-  --accent: #b794f6;
+@media (prefers-reduced-motion: reduce) {
+  .anchor-flash {
+    animation: none;
+  }
 }
-:root[data-theme="light"] {
-  --bg: #ffffff;
-  --fg: #1a1a1a;
-  --muted: #666;
-  --border: #e2e2e2;
-  --code-bg: #f5f5f5;
-  --link: #2563eb;
-  --accent: #6d28d9;
-}
-
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-.page { max-width: 860px; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
-h1 { font-size: 1.6rem; margin: 0.4rem 0 1rem; }
-h1.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
-h3.dir { font-family: ui-monospace, monospace; font-size: .95rem; color: var(--muted); margin: 1.4rem 0 .4rem; }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
-code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; font-family: ui-monospace, monospace; font-size: .88em; }
-pre { background: var(--code-bg); padding: .7rem .9rem; border-radius: 8px; overflow-x: auto; }
-pre code { background: none; padding: 0; }
-.muted { color: var(--muted); }
-.small { font-size: .85rem; }
-.error { color: #c0392b; }
-
-ul { padding-left: 1.1rem; }
-.repo-list, .file-list, .results { list-style: none; padding-left: 0; }
-.repo-list li, .file-list li, .results li { margin: .5rem 0; }
-
-.search {
-  width: 100%; padding: .6rem .8rem; font-size: 1rem;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg);
-}
-
-.badge {
-  display: inline-block; font-size: .7rem; padding: .1em .5em; border-radius: 10px;
-  border: 1px solid var(--border); margin-left: .35rem; vertical-align: middle;
-}
-.kind-component { background: rgba(109,40,217,.12); border-color: var(--accent); }
-.kind-hook { background: rgba(37,99,235,.12); }
-.prov-human { background: rgba(16,185,129,.15); }
-.prov-heuristic { background: rgba(148,163,184,.15); }
-.prov-llm { background: rgba(234,179,8,.15); }
-.export { color: #10b981; }
-.internal { color: var(--muted); }
-
-.symbol { border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1rem; margin: 1rem 0; }
-.symbol-head { font-size: 1.05rem; }
-.sig { margin: .5rem 0; }
-.purpose { margin: .4rem 0; }
-
-table.props { border-collapse: collapse; width: 100%; margin: .6rem 0; font-size: .88rem; }
-table.props th, table.props td { border: 1px solid var(--border); padding: .35rem .55rem; text-align: left; vertical-align: top; }
-table.props th { background: var(--code-bg); font-weight: 600; }
-.example { border-left: 3px solid var(--accent); }

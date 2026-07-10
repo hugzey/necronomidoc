@@ -13,6 +13,7 @@ Architectural and directional decisions for the documentation server project. On
 | [0007](0007-extraction-stack-typescript.md) | TypeScript extraction stack for the first vertical slice | Accepted |
 | [0008](0008-mcp-serving.md) | MCP: build-time manifests + stateless streamable-HTTP handler | Accepted |
 | [0009](0009-project-stack.md) | Project-wide stack: TypeScript; React + Vite + React Router frontend | Accepted |
+| [0010](0010-daisyui-component-base.md) | UI components: Tailwind CSS + daisyUI as the site's component base | Accepted |
 
 ## Statuses
 
