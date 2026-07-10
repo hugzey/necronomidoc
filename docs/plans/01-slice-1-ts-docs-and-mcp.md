@@ -1,5 +1,11 @@
 # Slice 1 — TypeScript/React repo → interactive doc site + MCP
 
+> **Status: ✅ Completed (2026-07-10).** The full vertical slice is implemented,
+> tested (12 passing tests), and demoable end-to-end. See the
+> [implementation notes](#implementation-notes--outcome) at the bottom for what
+> shipped, what was deferred, and the recorded spike outcomes. Usage:
+> [docs/usage.md](../usage.md).
+
 **Goal (requirement 9):** point the system at a TypeScript React frontend repo and get (a) an interactive web doc site and (b) a working MCP endpoint serving per-file/per-function purpose docs — hosted by the portable server. Triggering is manual in this slice (CLI or a bare REST call); automated webhooks are slice 2.
 
 **Definition of demo:** `necronomidoc build <git-url-or-path>` then `necronomidoc serve` → browse the repo's docs in the SPA, and connect Claude Code to `http://host:PORT/mcp` and successfully ask "what is `src/hooks/useThing.ts` for?" and "is there an existing function that does X?".
@@ -96,3 +102,51 @@ interface DocAdapter {
 | Sparse comments → thin slice-1 docs | Heuristic overlay producer ships in this slice; LLM writer next (slice 3) |
 
 **Estimated effort:** ~3 weeks single-developer, less with the spike going smoothly.
+
+## Implementation notes & outcome
+
+The slice shipped as a 7-package npm-workspaces monorepo. Everything builds with
+`npm run build:all`, tests pass with `npm test`, and the demo runs via
+`necronomidoc build fixtures/sample-react-app` → `necronomidoc serve`.
+
+**What shipped, per package**
+
+- **`docmodel`** — Zod schemas for the file-rooted IR (`DocModel` → files →
+  symbols), enrichment overlay, and manifests; stable IDs
+  (`slug:path#symbol`), content hashing, and JSON-Schema export.
+- **`adapter-ts`** — `DocAdapter` interface + a ts-morph sweep capturing every
+  declaration (incl. non-exported), JSDoc, signatures, imports/exports, file
+  module docs, React component detection, and prop tables. Snapshot-style tests
+  against an in-tree fixture.
+- **`enrichment`** — heuristic purpose producer (folds in existing comments),
+  overlay loader (`.necronomidoc/enrichment/**`, YAML/JSON), and a merge with
+  `human > llm > heuristic` precedence + content-hash staleness.
+- **`mcp`** — manifest builder (doc model + serialized MiniSearch index +
+  `llms.txt`), an in-memory store, and the 6 tools over a **stateless**
+  streamable-HTTP MCP server (official SDK, `sessionIdGenerator: undefined`,
+  JSON mode), fetch-portable.
+- **`server`** — Hono app: static site + `/data` manifests + `POST /mcp` +
+  bearer-guarded `POST /api/build` + `/api/status` + `/health`; build
+  orchestration with an atomic per-repo directory swap and MCP hot-reload.
+- **`cli`** — `necronomidoc build | serve | validate | export-schemas`.
+- **`site`** — a React + Vite + React Router 7 SPA (data-driven from the
+  manifests) with directory/file browsing, symbol cards, prop tables,
+  provenance/staleness badges, and client-side MiniSearch.
+
+**Deferred within slice-1 scope (with pragmatic equivalents in place)**
+
+- **Fumadocs UI** was deferred in favor of the pre-decided decision-0005
+  fallback: React Router 7 + Vite with our own layout, fed by a custom
+  (non-filesystem) source. The stack constraint (React + Vite + React Router)
+  holds; only the UI-kit layer differs. Adopting Fumadocs UI is now a
+  hardening task, not a slice-1 blocker. (Recorded in decision 0005.)
+- **TypeDoc `--json`** and **react-docgen-typescript** — the plan marked both
+  optional. Component/prop extraction is done syntactically in the ts-morph
+  sweep (resolves prop interfaces/type-literals in-file), so prop tables work
+  today without the extra tools. TypeDoc's richer exported-API semantics remain
+  a graceful, optional upgrade.
+
+**Acceptance criteria** 1–5 are all met and demonstrated (schema-valid IR +
+manifests with zero config; browsable static site with search; MCP search/get
+within budget; human overlay round-trips to site + MCP with staleness; whole
+flow filesystem-confined and host-portable).

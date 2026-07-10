@@ -32,3 +32,18 @@ Fallback if Fumadocs' React Router support proves too immature during the slice-
 - One framework satisfies the SPA, React, Vite, React Router, static-hosting, OpenAPI, and programmatic-content requirements simultaneously.
 - Fumadocs moves fast with a small maintainer team — pin versions, wrap its APIs behind our own thin site-build module so churn is absorbed in one place.
 - Slice 1 must include a short spike validating: React Router SPA static build, custom source feeding generated content, and client-side search over generated pages.
+
+## Spike outcome (2026-07-10, slice 1)
+
+**Fallback path taken.** Slice 1 ships the doc site as a **React Router 7 + Vite
+SPA with our own layout**, fed by a custom source (our IR + enrichment merge
+output) and MiniSearch client-side search — i.e. the fallback described above,
+not the `fumadocs-ui` kit. Rationale: it validated the load-bearing risks (custom
+generated-content source, static SPA build, client-side search, deep-link
+fallback served by the portable server) with the smallest dependency surface,
+keeping the whole flow reliably runnable end-to-end for the first slice.
+
+The binding stack constraint is fully satisfied (React + Vite + React Router).
+**Adopting `fumadocs-ui` as the layout layer is a follow-up hardening task**, not
+a re-decision: our site-build module already isolates content generation from
+presentation, which is where Fumadocs would slot in.

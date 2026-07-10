@@ -1,0 +1,21 @@
+{
+  "name": "@necronomidoc/server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@necronomidoc/adapter-ts": "*",
+    "@necronomidoc/docmodel": "*",
+    "@necronomidoc/enrichment": "*",
+    "@necronomidoc/mcp": "*",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0"
+  }
+}
