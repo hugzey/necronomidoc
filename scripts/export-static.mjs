@@ -36,9 +36,15 @@ const cssFile = assets.find((f) => f.endsWith(".css"));
 if (!jsFile || !cssFile) throw new Error("site dist missing bundles — run `npm run build:site`");
 
 // "</script" inside inlined JS/JSON would close the tag early; "<\/script" is
-// byte-identical inside JS strings/regex, and < is safe in JSON.
-const js = readFileSync(join(siteDist, "assets", jsFile), "utf8").replace(/<\/script/gi, "<\\/script");
-const data = JSON.stringify({ registry, models }).replace(/</g, "\\u003c");
+// byte-identical inside JS strings/regex, and < is safe in JSON. Literal
+// U+FFFD chars (react-markdown's decoder keeps them in string literals) are
+// emitted as escapes — some hosts reject raw U+FFFD as encoding corruption.
+const js = readFileSync(join(siteDist, "assets", jsFile), "utf8")
+  .replace(/<\/script/gi, "<\\/script")
+  .replace(/�/g, "\\uFFFD");
+const data = JSON.stringify({ registry, models })
+  .replace(/</g, "\\u003c")
+  .replace(/�/g, "\\uFFFD");
 const css = readFileSync(join(siteDist, "assets", cssFile), "utf8");
 
 const body = `<title>necronomidoc — ${registry.repos.map((r) => r.name).join(", ")}</title>
