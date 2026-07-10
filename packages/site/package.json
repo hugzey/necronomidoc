@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@necronomidoc/docmodel": "*",
+    "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.2",
     "daisyui": "^5.6.16",
     "minisearch": "^7.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0",
     "tailwindcss": "^4.3.2"
   },

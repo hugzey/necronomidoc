@@ -24,6 +24,7 @@ export const SymbolKind = z.enum([
   "method",
   "property",
   "endpoint",
+  "section",
   "unknown",
 ]);
 export type SymbolKind = z.infer<typeof SymbolKind>;
@@ -126,6 +127,16 @@ export const DocFile = z.object({
   id: z.string(),
   path: z.string(),
   contentHash: z.string(),
+  /**
+   * How to interpret the file: `source` (code; symbols are declarations) or
+   * `markdown` (prose; `content` carries the document, symbols are `section`
+   * headings). Additive in schema v1 — absent means `source`.
+   */
+  format: z.enum(["source", "markdown"]).default("source"),
+  /** Document title (markdown: first h1, else the filename). */
+  title: z.string().optional(),
+  /** Full document text for prose formats; omitted for source files. */
+  content: z.string().optional(),
   moduleDoc: DocComment.optional(),
   imports: z.array(ImportRef).default([]),
   exports: z.array(z.string()).default([]),

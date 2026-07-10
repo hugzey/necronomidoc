@@ -4,13 +4,7 @@
     "rootDir": "./src",
     "outDir": "./dist"
   },
-  "references": [
-    { "path": "../docmodel" },
-    { "path": "../adapter-ts" },
-    { "path": "../adapter-markdown" },
-    { "path": "../enrichment" },
-    { "path": "../mcp" }
-  ],
+  "references": [{ "path": "../docmodel" }],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

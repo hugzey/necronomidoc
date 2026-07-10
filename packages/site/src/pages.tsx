@@ -16,7 +16,15 @@ import {
   ScrollToAnchor,
   Sidebar,
 } from "./components.js";
-import { buildSymbolIndex, fileHref, makeResolver, resolveImport, type SymbolResolver } from "./resolve.js";
+import { MarkdownDoc } from "./markdown.js";
+import {
+  buildSymbolIndex,
+  fileHref,
+  makeResolver,
+  resolveImport,
+  slugifyAnchor,
+  type SymbolResolver,
+} from "./resolve.js";
 import { buildSiteIndex } from "./search.js";
 
 function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data?: T; error?: string; loading: boolean } {
@@ -145,6 +153,7 @@ export function RepoView() {
 
   if (loading) return <Loading />;
   if (error || !model) return <div className="alert alert-error">Failed to load repo.</div>;
+  const readme = model.files.find((f) => f.format === "markdown" && /^readme\.(md|markdown|mdx)$/i.test(f.path));
 
   return (
     <div>
@@ -165,7 +174,13 @@ export function RepoView() {
         <ul className="menu mt-4 w-full rounded-box bg-base-200">
           {results.map((r) => (
             <li key={r.id}>
-              <Link to={fileHref(slug, r.path, r.type === "symbol" ? r.name : undefined)}>
+              <Link
+                to={fileHref(
+                  slug,
+                  r.path,
+                  r.type !== "symbol" ? undefined : r.kind === "section" ? slugifyAnchor(r.name) : r.name,
+                )}
+              >
                 <KindBadge kind={String(r.kind ?? r.type)} />
                 <span className="font-medium">{r.name}</span>
                 <span className="text-xs text-base-content/60">{r.path}</span>
@@ -175,7 +190,15 @@ export function RepoView() {
           {results.length === 0 && <li className="p-3 text-base-content/60">No matches.</li>}
         </ul>
       ) : (
-        <div className="mt-6 overflow-x-auto">
+        <>
+          {readme?.content && (
+            <div className="mt-6">
+              <MarkdownDoc content={readme.content} slug={slug} path={readme.path} files={model.files} />
+              <div className="divider" />
+            </div>
+          )}
+          <h2 className="mb-2 mt-6 text-lg font-semibold">Files</h2>
+        <div className="overflow-x-auto">
           <table className="table table-sm">
             <thead>
               <tr>
@@ -200,6 +223,7 @@ export function RepoView() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -331,20 +355,34 @@ export function FileView() {
   if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
   const symbols = flattenSymbols(file);
 
+  const breadcrumbs = (
+    <div className="breadcrumbs text-sm">
+      <ul>
+        <li>
+          <Link to={`/r/${slug}`}>{model!.repo.name}</Link>
+        </li>
+        {filePath.split("/").map((seg, i, all) => (
+          <li key={i} className={i === all.length - 1 ? "font-medium" : "text-base-content/60"}>
+            {seg}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  // Prose documents render as a page, not as a symbol inventory.
+  if (file.format === "markdown" && file.content) {
+    return (
+      <div>
+        {breadcrumbs}
+        <MarkdownDoc content={file.content} slug={slug} path={file.path} files={model!.files} />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="breadcrumbs text-sm">
-        <ul>
-          <li>
-            <Link to={`/r/${slug}`}>{model!.repo.name}</Link>
-          </li>
-          {filePath.split("/").map((seg, i, all) => (
-            <li key={i} className={i === all.length - 1 ? "font-medium" : "text-base-content/60"}>
-              {seg}
-            </li>
-          ))}
-        </ul>
-      </div>
+      {breadcrumbs}
       <h1 className="mb-3 font-mono text-xl font-bold">{file.path}</h1>
       {file.enrichment?.summary && (
         <p className="mb-1">

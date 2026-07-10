@@ -383,6 +383,7 @@ export class TypeScriptAdapter implements DocAdapter {
       id: makeFileId(slug, rel),
       path: rel,
       contentHash: hashContent(fullText),
+      format: "source",
       moduleDoc,
       imports,
       exports: [...exportNames].sort(),

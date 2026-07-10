@@ -25,7 +25,15 @@ export function buildSiteIndex(model: DocModel): MiniSearch<SiteSearchDoc> {
       path: file.path,
       name: file.path.split("/").pop() ?? file.path,
       summary: file.enrichment?.summary,
-      text: [file.path, file.enrichment?.summary, file.enrichment?.purpose].filter(Boolean).join(" "),
+      text: [
+        file.path,
+        file.title,
+        file.enrichment?.summary,
+        file.enrichment?.purpose,
+        file.content?.slice(0, 4000),
+      ]
+        .filter(Boolean)
+        .join(" "),
     });
     const walk = (symbols: typeof file.symbols) => {
       for (const s of symbols) {

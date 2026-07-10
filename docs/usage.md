@@ -29,9 +29,16 @@ node packages/cli/dist/index.js build fixtures/sample-react-app --name sample-re
 node packages/cli/dist/index.js build https://github.com/org/repo.git --ref main
 ```
 
-This runs: **extract** (ts-morph sweep) → **enrich** (heuristics + your overlays)
-→ **write manifests** (doc model JSON, search index, `llms.txt`) with an atomic
-per-repo swap. Output lands under the data dir (default `./.necronomidoc-data`).
+This runs: **extract** (every adapter that recognizes the repo — the TypeScript
+sweep plus the markdown adapter for READMEs/`docs/` prose) → **enrich**
+(heuristics + your overlays) → **write manifests** (doc model JSON, search
+index, `llms.txt`) with an atomic per-repo swap. Output lands under the data
+dir (default `./.necronomidoc-data`).
+
+Markdown files ride along as first-class docs: the repo page renders the root
+README, each `.md` gets its own rendered page in the file tree, headings become
+searchable `section` entries, and MCP's `get_file_doc` returns the document
+body.
 
 Flags: `--name <n>`, `--ref <git-ref>`, `--data-dir <dir>`.
 

@@ -7,6 +7,7 @@
   "workspaces": [
     "packages/docmodel",
     "packages/adapter-ts",
+    "packages/adapter-markdown",
     "packages/enrichment",
     "packages/mcp",
     "packages/server",
@@ -14,10 +15,10 @@
     "packages/site"
   ],
   "scripts": {
-    "build": "tsc -b packages/docmodel packages/adapter-ts packages/enrichment packages/mcp packages/server packages/cli",
+    "build": "tsc -b packages/docmodel packages/adapter-ts packages/adapter-markdown packages/enrichment packages/mcp packages/server packages/cli",
     "build:site": "npm run build --workspace @necronomidoc/site",
     "build:all": "npm run build && npm run build:site",
-    "clean": "tsc -b --clean packages/docmodel packages/adapter-ts packages/enrichment packages/mcp packages/server packages/cli && rimraf packages/site/dist",
+    "clean": "tsc -b --clean packages/docmodel packages/adapter-ts packages/adapter-markdown packages/enrichment packages/mcp packages/server packages/cli && rimraf packages/site/dist",
     "test": "vitest run",
     "necronomidoc": "node packages/cli/dist/index.js"
   },

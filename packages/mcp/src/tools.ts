@@ -72,9 +72,23 @@ export const tools = {
   get_file_doc(store: ManifestStore, args: { repo: string; path: string }): ToolResult {
     const file = store.getFile(args.repo, args.path);
     if (!file) return { error: `No file "${args.path}" in repo "${args.repo}".` };
+    // Prose documents return their body (bounded well under client caps).
+    const CONTENT_MAX = 8000;
+    const contentExtra =
+      file.format === "markdown" && file.content
+        ? {
+            format: file.format,
+            title: file.title,
+            content:
+              file.content.length > CONTENT_MAX
+                ? `${file.content.slice(0, CONTENT_MAX)}\n…(truncated)`
+                : file.content,
+          }
+        : {};
     return {
       repo: args.repo,
       path: file.path,
+      ...contentExtra,
       purpose: file.enrichment?.summary,
       detail: file.enrichment?.purpose,
       provenance: file.enrichment?.provenance,

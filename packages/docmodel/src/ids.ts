@@ -48,3 +48,17 @@ export function fileIdOfSymbol(symbolId: string): string {
   const hash = symbolId.indexOf("#");
   return hash === -1 ? symbolId : symbolId.slice(0, hash);
 }
+
+/**
+ * GitHub-style anchor slug for a markdown heading. Adapters use this for
+ * section symbol names' anchors and the site derives rendered heading ids the
+ * same way, so links land. (Duplicated in packages/site/src/resolve.ts to keep
+ * zod out of the browser bundle — keep the two in sync.)
+ */
+export function slugifyAnchor(heading: string): string {
+  return heading
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-");
+}

@@ -13,6 +13,7 @@ const KIND_BADGE: Record<string, string> = {
   type: "badge-info badge-outline",
   enum: "badge-info badge-outline",
   endpoint: "badge-warning",
+  section: "badge-neutral badge-outline",
 };
 
 export function KindBadge({ kind }: { kind: string }) {

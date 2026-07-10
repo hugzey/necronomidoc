@@ -11,11 +11,12 @@
     "build": "tsc -b"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "@necronomidoc/adapter-markdown": "*",
     "@necronomidoc/adapter-ts": "*",
     "@necronomidoc/docmodel": "*",
     "@necronomidoc/enrichment": "*",
     "@necronomidoc/mcp": "*",
-    "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0"
   }
 }

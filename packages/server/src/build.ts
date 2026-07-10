@@ -2,13 +2,31 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { TypeScriptAdapter, type AdapterConfig, type DocAdapter } from "@necronomidoc/adapter-ts";
-import { slugify, type DocModel, type RegistryEntry } from "@necronomidoc/docmodel";
+import { MarkdownAdapter } from "@necronomidoc/adapter-markdown";
+import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
+import { slugify, type AdapterConfig, type DocAdapter, type DocModel, type RegistryEntry } from "@necronomidoc/docmodel";
 import { mergeEnrichment } from "@necronomidoc/enrichment";
 import { paths, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 
-/** Adapters tried in order; the first that detects the repo wins. */
-const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter()];
+/** Every adapter that detects the repo runs; their file lists are combined. */
+const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new MarkdownAdapter()];
+
+/** Combine per-adapter models into one (first adapter wins on path clashes). */
+function combineModels(models: DocModel[]): DocModel {
+  const [base, ...rest] = models;
+  const files = [...base!.files];
+  const seen = new Set(files.map((f) => f.path));
+  for (const model of rest) {
+    for (const file of model.files) {
+      if (!seen.has(file.path)) {
+        seen.add(file.path);
+        files.push(file);
+      }
+    }
+  }
+  files.sort((a, b) => a.path.localeCompare(b.path));
+  return { ...base!, files };
+}
 
 export interface BuildOptions {
   dataDir: string;
@@ -71,21 +89,23 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
 
   try {
     const repoName = options.name ?? slugify(repoUrl ?? repoDir);
-    let adapter: DocAdapter | undefined;
-    for (const candidate of ADAPTERS) {
-      if (await candidate.detect(repoDir)) {
-        adapter = candidate;
-        break;
-      }
-    }
-    if (!adapter) throw new Error(`No adapter recognized the repo at ${repoDir}.`);
-
-    const model = await adapter.extract(repoDir, {
+    const config: AdapterConfig = {
       repoName,
       repoUrl,
       ref: options.ref,
       ...options.adapterConfig,
-    });
+    };
+    const models: DocModel[] = [];
+    const languages: string[] = [];
+    for (const candidate of ADAPTERS) {
+      if (await candidate.detect(repoDir)) {
+        models.push(await candidate.extract(repoDir, config));
+        languages.push(candidate.language);
+      }
+    }
+    if (models.length === 0) throw new Error(`No adapter recognized the repo at ${repoDir}.`);
+
+    const model = combineModels(models);
 
     const merged = mergeEnrichment(model, {
       overlayDirs: [
@@ -100,7 +120,7 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     const entry = registryEntryFor(merged);
     upsertRegistry(dataDir, entry);
 
-    return { model: merged, entry, adapter: adapter.language };
+    return { model: merged, entry, adapter: languages.join("+") };
   } finally {
     cleanup?.();
   }

@@ -37,6 +37,7 @@ function kindPhrase(kind: string, plural = false): string {
     enum: ["enum", "enums"],
     variable: ["value", "values"],
     endpoint: ["endpoint", "endpoints"],
+    section: ["section", "sections"],
   };
   const entry = map[kind] ?? ["symbol", "symbols"];
   return plural ? entry[1] : entry[0];
@@ -64,6 +65,14 @@ export function heuristicForSymbol(symbol: DocSymbolShape): AttachedEnrichment {
 export function heuristicForFile(file: DocFile): AttachedEnrichment {
   if (file.moduleDoc?.summary) {
     return { summary: file.moduleDoc.summary, provenance: "heuristic", stale: false };
+  }
+  if (file.format === "markdown") {
+    // Prose doc with no intro paragraph — the title is the best one-liner.
+    return {
+      summary: file.title ? `${file.title}.` : `Document \`${file.path}\`.`,
+      provenance: "heuristic",
+      stale: false,
+    };
   }
   const exported = file.symbols.filter((s) => s.exported);
   const pool = exported.length ? exported : file.symbols;

@@ -80,6 +80,41 @@ function normalizeSegments(p: string): string {
 }
 
 /**
+ * GitHub-style anchor slug for a markdown heading — MUST stay in sync with
+ * `slugifyAnchor` in packages/docmodel/src/ids.ts (duplicated so the browser
+ * bundle doesn't pull in zod via the docmodel package).
+ */
+export function slugifyAnchor(heading: string): string {
+  return heading
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-");
+}
+
+/**
+ * Resolve a relative markdown link (`./guide.md`, `../api/README.md#auth`)
+ * from one documented file to a site href. Returns undefined for external or
+ * unresolvable links.
+ */
+export function resolveDocLink(
+  slug: string,
+  fromPath: string,
+  href: string,
+  files: Pick<DocFile, "path">[],
+): string | undefined {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return undefined;
+  if (href.startsWith("#")) return undefined; // in-page anchor — leave as-is
+  const [pathPart = "", fragment] = href.split("#");
+  const known = new Set(files.map((f) => f.path));
+  const base = normalizeSegments(
+    pathPart.startsWith("/") ? pathPart.slice(1) : `${dirname(fromPath)}/${pathPart}`,
+  );
+  const target = [base, `${base}/README.md`, `${base}/index.md`].find((c) => known.has(c));
+  return target ? fileHref(slug, target, fragment) : undefined;
+}
+
+/**
  * Resolve a relative import specifier from one documented file to another
  * (TS-style: `./x.js` may mean `x.ts`/`x.tsx` on disk).
  */
