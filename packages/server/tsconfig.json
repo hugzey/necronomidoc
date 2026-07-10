@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../docmodel" },
+    { "path": "../adapter-ts" },
+    { "path": "../adapter-markdown" },
+    { "path": "../enrichment" },
+    { "path": "../mcp" }
+  ],
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

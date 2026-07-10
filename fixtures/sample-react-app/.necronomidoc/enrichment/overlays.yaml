@@ -1,0 +1,12 @@
+# Human-authored enrichment overlays for the sample app.
+# targetId matches the DocModel stable id: "<slug>:<path>#<symbol>".
+- targetId: "sample-react-app:src/hooks/useCounter.ts#useCounter"
+  provenance: human
+  summary: "Canonical counter hook — use this instead of hand-rolling useState counters."
+  purpose: "Provides the app-wide counter state machine so increment/decrement/reset behave consistently."
+  scope: "UI state only; does not persist across reloads."
+
+- targetId: "sample-react-app:src/utils/format.ts"
+  provenance: human
+  summary: "The one place formatting helpers live."
+  purpose: "Keep display formatting pure and framework-free so it is trivially testable and reusable."

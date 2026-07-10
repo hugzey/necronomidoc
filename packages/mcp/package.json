@@ -1,0 +1,19 @@
+{
+  "name": "@necronomidoc/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@necronomidoc/docmodel": "*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "minisearch": "^7.1.0",
+    "zod": "^3.24.0"
+  }
+}
