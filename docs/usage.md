@@ -1,4 +1,4 @@
-# Usage — Slice 1 (TS/React → doc site + MCP)
+# Usage — doc site + MCP from your repos
 
 necronomidoc points at a TypeScript/React repo and produces (a) an interactive
 doc site and (b) an MCP endpoint, both served by one portable Node process with
@@ -69,7 +69,24 @@ tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
 Try asking your agent: *"what is `src/hooks/useCounter.ts` for?"* or *"is there
 an existing function that formats currency?"*.
 
-## Trigger a build over HTTP (slice-1 stand-in for webhooks)
+## Automatic rebuilds on push (slice 2)
+
+Register the repo, configure a webhook, and pushes rebuild its docs with no
+manual step:
+
+```bash
+node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
+  --id widgets --provider github --secret-env WIDGETS_HOOK_SECRET
+```
+
+Then point a GitHub webhook at `/hooks/github` (or an Azure DevOps service
+hook at `/hooks/ado`, or call `/api/build` with `{"repoId":"widgets"}` from
+any CI). Rapid pushes are debounced into one build, accepted triggers survive
+restarts (`queue.json`), and a failing build keeps the previous docs serving.
+Build results appear on `GET /api/status` and the site's **Build status**
+page. Full setup guide: [ops-ingestion.md](ops-ingestion.md).
+
+## Trigger an ad-hoc build over HTTP
 
 Set a token, then POST to `/api/build`:
 

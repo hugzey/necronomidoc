@@ -14,9 +14,15 @@ binding technical choices.
 
 ## Status
 
-**Slice 1 is complete** — point it at a TypeScript/React repo and get a doc site
-+ MCP endpoint, triggered manually via CLI or a REST call. See
-[docs/plans/01-slice-1-ts-docs-and-mcp.md](docs/plans/01-slice-1-ts-docs-and-mcp.md).
+**Slices 1 and 2 are complete.**
+
+- Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
+  endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
+- Slice 2 — automated ingestion: register repos, and pushes rebuild their docs
+  via GitHub webhooks, Azure DevOps service hooks, or authenticated REST calls
+  — debounced, journaled build queue with atomic publish and a status surface
+  ([plan](docs/plans/02-slice-2-automated-ingestion.md),
+  [ops guide](docs/ops-ingestion.md)).
 
 ## Quick start
 
@@ -31,6 +37,10 @@ node packages/cli/dist/index.js build fixtures/sample-react-app --name sample-re
 node packages/cli/dist/index.js serve --port 4319
 # → site  http://localhost:4319/
 # → MCP   http://localhost:4319/mcp
+
+# or register a repo so pushes rebuild it automatically (slice 2)
+node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
+  --id widgets --provider github --secret-env WIDGETS_HOOK_SECRET
 ```
 
 Full guide: [docs/usage.md](docs/usage.md).
@@ -43,8 +53,8 @@ Full guide: [docs/usage.md](docs/usage.md).
 | `packages/adapter-ts` | TypeScript/React extraction (ts-morph sweep, JSDoc, components, prop tables) |
 | `packages/enrichment` | Heuristic purpose producer + overlay loader + precedence merge + staleness |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
-| `packages/server` | Hono server (site + `/data` + `/mcp` + build API) and build orchestration |
-| `packages/cli` | `necronomidoc build \| serve \| validate \| export-schemas` |
+| `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API), provider adapters, journaled build queue |
+| `packages/cli` | `necronomidoc build \| serve \| repo add\|list\|remove \| validate \| export-schemas` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search |
 
 ## Tests

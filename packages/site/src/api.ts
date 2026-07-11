@@ -1,4 +1,10 @@
-import type { DocFile, DocModel, DocSymbolShape, Registry } from "@necronomidoc/docmodel";
+import type {
+  DocFile,
+  DocModel,
+  DocSymbolShape,
+  IngestStatusResponse,
+  Registry,
+} from "@necronomidoc/docmodel";
 
 export type { DocFile, DocModel, DocSymbolShape, Registry };
 
@@ -38,6 +44,22 @@ export function fetchModel(slug: string): Promise<DocModel> {
     return model ? Promise.resolve(model) : Promise.reject(new Error(`no model for ${slug}`));
   }
   return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
+}
+
+// ---- Ingestion status (slice 2) ----
+
+// The wire types live in docmodel, shared with the server that produces them.
+export type StatusResponse = IngestStatusResponse;
+
+/**
+ * Live server status — never cached, and unavailable in static-export mode
+ * (there is no server to ask). Returns undefined in that case.
+ */
+export async function fetchStatus(): Promise<StatusResponse | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch("/api/status");
+  if (!res.ok) throw new Error(`${res.status} fetching /api/status`);
+  return (await res.json()) as StatusResponse;
 }
 
 /** Flatten a file's symbols (including members) for rendering. */

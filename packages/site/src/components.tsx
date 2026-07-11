@@ -275,6 +275,11 @@ export function Sidebar({
       ) : (
         <p className="text-sm text-base-content/60">Pick a repo to browse its files.</p>
       )}
+      <div className="mt-auto border-t border-base-300 pt-3">
+        <Link to="/status" className="link-hover link text-sm text-base-content/60">
+          Build status
+        </Link>
+      </div>
     </nav>
   );
 }

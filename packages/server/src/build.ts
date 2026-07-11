@@ -1,12 +1,20 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MarkdownAdapter } from "@necronomidoc/adapter-markdown";
 import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
-import { slugify, type AdapterConfig, type DocAdapter, type DocModel, type RegistryEntry } from "@necronomidoc/docmodel";
+import {
+  SCHEMA_VERSION,
+  slugify,
+  type AdapterConfig,
+  type DocAdapter,
+  type DocModel,
+  type Registry,
+  type RegistryEntry,
+} from "@necronomidoc/docmodel";
 import { mergeEnrichment } from "@necronomidoc/enrichment";
-import { paths, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
+import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
 const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new MarkdownAdapter()];
@@ -45,7 +53,8 @@ export interface BuildResult {
   adapter: string;
 }
 
-function isLocalDir(target: string): boolean {
+/** Is the target an existing local directory (build in place, no clone)? */
+export function isLocalDir(target: string): boolean {
   try {
     return statSync(target).isDirectory();
   } catch {
@@ -53,8 +62,9 @@ function isLocalDir(target: string): boolean {
   }
 }
 
-function looksLikeGitUrl(target: string): boolean {
-  return /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)/.test(target) || target.endsWith(".git");
+/** Does the target look like a remote git URL (clone required)? */
+export function looksLikeGitUrl(target: string): boolean {
+  return /^(https?:\/\/|file:\/\/|git@|ssh:\/\/|git:\/\/)/.test(target) || target.endsWith(".git");
 }
 
 /** Shallow-clone a repo to a temp dir. Returns [dir, cleanup]. */
@@ -123,6 +133,21 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     return { model: merged, entry, adapter: languages.join("+") };
   } finally {
     cleanup?.();
+  }
+}
+
+/** Remove a repo's published docs: its manifests dir + docs-registry entry. */
+export function purgeRepoDocs(dataDir: string, idOrSlug: string): void {
+  // Docs publish under slugify(name); legacy ids may not be slug-stable.
+  const slug = slugify(idOrSlug);
+  rmSync(paths.repoDir(dataDir, slug), { recursive: true, force: true });
+  const registry = readRegistry(dataDir);
+  const next: Registry = {
+    schemaVersion: SCHEMA_VERSION,
+    repos: registry.repos.filter((r) => r.slug !== slug),
+  };
+  if (existsSync(paths.registry(dataDir))) {
+    writeFileSync(paths.registry(dataDir), JSON.stringify(next, null, 2));
   }
 }
 
