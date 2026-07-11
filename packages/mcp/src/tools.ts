@@ -41,6 +41,7 @@ export const tools = {
         files: r.fileCount,
         symbols: r.symbolCount,
         summary: r.summary,
+        enrichment: r.enrichment,
       })),
     };
   },
@@ -132,9 +133,61 @@ export const tools = {
     if (files.length === 0) return { error: `No repo "${args.repo}".` };
 
     const prefix = args.dir?.replace(/\/+$/, "");
-    const scoped = prefix ? files.filter((f) => f.path.startsWith(`${prefix}/`) || f.path === prefix) : files;
+    const manifest = store.getSubsystems(args.repo);
 
-    // Group by the directory one level below the scope root.
+    // Curated (or heuristic-published) subsystem map: purpose + boundaries +
+    // entry points, with each subsystem's files resolved by dir prefix.
+    if (manifest && manifest.subsystems.length > 0) {
+      const inSubsystem = (path: string, dirs: string[]): boolean =>
+        dirs.length === 0
+          ? !path.includes("/") // dir-less subsystems own root files
+          : dirs.some((d) => path === d || path.startsWith(`${d.replace(/\/+$/, "")}/`));
+
+      const FILES_MAX = 30;
+      const selected = manifest.subsystems.filter(
+        (s) =>
+          !prefix ||
+          s.dirs.some((d) => d === prefix || d.startsWith(`${prefix}/`) || prefix.startsWith(`${d}/`)),
+      );
+      if (selected.length > 0) {
+        const claimed = new Set<string>();
+        const subsystems = selected.map((s) => {
+          const owned = files.filter((f) => inSubsystem(f.path, s.dirs));
+          owned.forEach((f) => claimed.add(f.path));
+          return {
+            id: s.id,
+            name: s.name,
+            purpose: s.purpose,
+            owns: s.owns,
+            doesNotOwn: s.notOwns,
+            entryPoints: s.entryPoints,
+            related: s.related,
+            dirs: s.dirs,
+            provenance: s.provenance,
+            fileCount: owned.length,
+            files: owned.slice(0, FILES_MAX).map((f) => ({
+              path: f.path,
+              purpose: f.enrichment?.summary,
+            })),
+            filesTruncated: owned.length > FILES_MAX ? owned.length - FILES_MAX : undefined,
+          };
+        });
+        const unclaimed = files.filter((f) => !claimed.has(f.path)).length;
+        return {
+          repo: args.repo,
+          scope: prefix ?? "(whole repo)",
+          curated: manifest.subsystems.some((s) => s.provenance !== "heuristic"),
+          subsystems,
+          ...(prefix ? {} : { filesOutsideAnySubsystem: unclaimed }),
+        };
+      }
+      // fall through: dir doesn't match any subsystem — use directory grouping
+    }
+
+    // Fallback: group files by the directory one level below the scope root.
+    const scoped = prefix
+      ? files.filter((f) => f.path.startsWith(`${prefix}/`) || f.path === prefix)
+      : files;
     const groupKey = (f: DocFile): string => {
       const rest = prefix ? f.path.slice(prefix.length + 1) : f.path;
       const seg = rest.split("/");
@@ -152,6 +205,7 @@ export const tools = {
     return {
       repo: args.repo,
       scope: prefix ?? "(repo root)",
+      curated: false,
       subsystems: [...groups.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([dir, dirFiles]) => ({

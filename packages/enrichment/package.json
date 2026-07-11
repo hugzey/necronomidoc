@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@necronomidoc/docmodel": "*",
-    "yaml": "^2.6.0"
+    "yaml": "^2.6.0",
+    "@anthropic-ai/sdk": "^0.111.0",
+    "zod": "^3.24.0"
   }
 }

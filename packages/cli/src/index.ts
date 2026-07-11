@@ -4,12 +4,14 @@ import { resolve } from "node:path";
 import { DocModel, exportJsonSchemas, slugify } from "@necronomidoc/docmodel";
 import {
   buildRepo,
+  enrichRepo,
   KNOWN_PROVIDERS,
   loadConfig,
   purgeRepoDocs,
   readSourceRegistry,
   removeClone,
   removeSourceRepo,
+  reviewStale,
   startServer,
   upsertSourceRepo,
 } from "@necronomidoc/server";
@@ -53,6 +55,9 @@ const USAGE = `necronomidoc — team documentation server
 
 Usage:
   necronomidoc build <path-or-git-url> [--name <n>] [--ref <ref>] [--data-dir <dir>]
+  necronomidoc enrich <repo-id-or-path-or-url> [--dry-run] [--max-files <n>]
+                 [--max-tokens <n>] [--model <id>] [--subsystems]
+                 [--review-stale] [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
@@ -63,7 +68,8 @@ Usage:
   necronomidoc export-schemas [<out.json>]
 
 Env: DOCS_DATA_DIR, PORT, DOCS_TOKEN, SITE_DIR, DOCS_WEBHOOK_SECRET,
-     DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS
+     DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS,
+     ANTHROPIC_API_KEY (enrich), NECRONOMIDOC_ENRICH_MODEL (enrich)
 `;
 
 async function cmdBuild(flags: Flags): Promise<number> {
@@ -86,6 +92,79 @@ async function cmdBuild(flags: Flags): Promise<number> {
   );
   console.log(`  manifests written under ${config.dataDir}/repos/${entry.slug}/`);
   return 0;
+}
+
+function int(flags: Flags, key: string): number | undefined {
+  const v = str(flags, key);
+  if (v === undefined) return undefined;
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`--${key} must be a positive integer`);
+  return n;
+}
+
+async function cmdEnrich(flags: Flags): Promise<number> {
+  const target = (flags._ as string[])[1];
+  if (!target) {
+    console.error("enrich: missing <repo-id-or-path-or-url>");
+    return 1;
+  }
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+
+  if (flags["review-stale"] === true) {
+    const review = await reviewStale({
+      dataDir: config.dataDir,
+      target,
+      name: str(flags, "name"),
+      ref: str(flags, "ref"),
+    });
+    console.log(review);
+    return 0;
+  }
+
+  const dryRun = flags["dry-run"] === true;
+  if (!dryRun && !process.env["ANTHROPIC_API_KEY"]) {
+    console.error(
+      "enrich: set ANTHROPIC_API_KEY (or use --dry-run to preview without calling the API).",
+    );
+    return 1;
+  }
+
+  const result = await enrichRepo({
+    dataDir: config.dataDir,
+    target,
+    name: str(flags, "name"),
+    ref: str(flags, "ref"),
+    model: str(flags, "model") ?? process.env["NECRONOMIDOC_ENRICH_MODEL"],
+    maxFiles: int(flags, "max-files"),
+    maxTokens: int(flags, "max-tokens"),
+    dryRun,
+    subsystems: flags["subsystems"] === true,
+  });
+
+  const r = result.report;
+  if (dryRun) {
+    console.log(`Dry run for ${result.slug} (model ${r.model}):`);
+    console.log(
+      `  would summarize ${r.plannedFiles} files (${r.plannedFileSummaries} file + ${r.plannedSymbolSummaries} symbol summaries)`,
+    );
+  } else {
+    console.log(`✓ enriched ${result.slug} with ${r.model}`);
+    console.log(
+      `  ${r.calls} calls — ${r.inputTokens} input + ${r.outputTokens} output tokens, ${r.overlaysWritten} overlays written`,
+    );
+    if (result.subsystemsProposed !== undefined) {
+      console.log(
+        `  proposed ${result.subsystemsProposed} subsystems (review data/enrichment/${result.slug}/subsystems.llm.json; promote to subsystems.yaml when happy)`,
+      );
+    }
+  }
+  console.log(
+    `  skipped: ${r.skippedHuman} human-curated, ${r.skippedFresh} unchanged (hash cache)` +
+      (r.filesOverCap ? `, ${r.filesOverCap} files over --max-files cap` : ""),
+  );
+  if (r.aborted) console.log("  ⚠ token budget reached — run again to continue where it stopped.");
+  for (const failure of r.failures) console.warn(`  ✗ ${failure.path}: ${failure.error}`);
+  return r.failures.length > 0 && r.overlaysWritten === 0 && !dryRun ? 1 : 0;
 }
 
 function cmdServe(flags: Flags): number {
@@ -217,6 +296,8 @@ async function main(): Promise<number> {
   switch (command) {
     case "build":
       return cmdBuild(flags);
+    case "enrich":
+      return cmdEnrich(flags);
     case "serve":
       return cmdServe(flags);
     case "repo":

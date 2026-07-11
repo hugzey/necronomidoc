@@ -4,11 +4,14 @@ import {
   fetchModel,
   fetchRegistry,
   fetchStatus,
+  fetchSubsystems,
   flattenSymbols,
   type DocModel,
   type DocSymbolShape,
   type Registry,
   type StatusResponse,
+  type Subsystem,
+  type SubsystemsManifest,
 } from "./api.js";
 import {
   CodeText,
@@ -343,6 +346,154 @@ export function RepoView() {
         </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ---- Subsystems: purpose + boundaries per named group (slice 3) ----
+
+function SubsystemCard({
+  subsystem,
+  slug,
+  files,
+}: {
+  subsystem: Subsystem;
+  slug: string;
+  files: DocModel["files"];
+}) {
+  const owned = files.filter((f) =>
+    subsystem.dirs.length === 0
+      ? !f.path.includes("/")
+      : subsystem.dirs.some((d) => f.path === d || f.path.startsWith(`${d.replace(/\/+$/, "")}/`)),
+  );
+  return (
+    <div className="card card-border mb-4 bg-base-100" id={subsystem.id}>
+      <div className="card-body gap-2 p-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold">{subsystem.name}</h2>
+          <ProvenanceBadge provenance={subsystem.provenance} />
+          {subsystem.dirs.map((d) => (
+            <span key={d} className="badge badge-ghost badge-sm font-mono">
+              {d}/
+            </span>
+          ))}
+        </div>
+        <p>
+          <DocText text={subsystem.purpose} />
+        </p>
+        {(subsystem.owns.length > 0 || subsystem.notOwns.length > 0) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {subsystem.owns.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-medium text-success">Owns</h3>
+                <ul className="list-inside list-disc text-sm text-base-content/80">
+                  {subsystem.owns.map((o, i) => (
+                    <li key={i}>{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {subsystem.notOwns.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-medium text-error">Does not own</h3>
+                <ul className="list-inside list-disc text-sm text-base-content/80">
+                  {subsystem.notOwns.map((o, i) => (
+                    <li key={i}>{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        {subsystem.entryPoints.length > 0 && (
+          <p className="text-sm">
+            <span className="text-base-content/60">Entry points: </span>
+            {subsystem.entryPoints.map((entry, i) => {
+              const isFile = files.some((f) => f.path === entry);
+              return (
+                <span key={entry}>
+                  {i > 0 && ", "}
+                  {isFile ? (
+                    <Link to={fileHref(slug, entry)} className="xref font-mono">
+                      {entry}
+                    </Link>
+                  ) : (
+                    <code>{entry}</code>
+                  )}
+                </span>
+              );
+            })}
+          </p>
+        )}
+        {subsystem.related.length > 0 && (
+          <ul className="text-sm text-base-content/70">
+            {subsystem.related.map((r, i) => (
+              <li key={i}>
+                ↔ <span className="font-medium">{r.name}</span> — {r.relation}
+              </li>
+            ))}
+          </ul>
+        )}
+        {owned.length > 0 && (
+          <div className="collapse-arrow collapse bg-base-200">
+            <input type="checkbox" aria-label="Toggle files" />
+            <div className="collapse-title text-sm font-medium">
+              {owned.length} file{owned.length === 1 ? "" : "s"}
+            </div>
+            <div className="collapse-content">
+              <ul className="space-y-1 text-sm">
+                {owned.map((f) => (
+                  <li key={f.id} className="font-mono">
+                    <Link to={fileHref(slug, f.path)} className="xref">
+                      {f.path}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function SubsystemsView() {
+  const { slug = "" } = useParams();
+  const { data: model, loading: modelLoading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const { data: manifest, loading } = useAsync<SubsystemsManifest | undefined>(
+    () => fetchSubsystems(slug),
+    [slug],
+  );
+
+  if (loading || modelLoading) return <Loading />;
+  if (!manifest || manifest.subsystems.length === 0) {
+    return (
+      <div>
+        <h1 className="mb-1 text-2xl font-bold">Subsystems</h1>
+        <div className="alert alert-info mt-4">
+          <span>
+            No subsystem map published for this repo yet — rebuild it, curate{" "}
+            <code>.necronomidoc/subsystems.yaml</code>, or run{" "}
+            <code>necronomidoc enrich --subsystems</code>.
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const curated = manifest.subsystems.some((s) => s.provenance !== "heuristic");
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-bold">Subsystems</h1>
+      <p className="mb-6 text-base-content/60">
+        {curated
+          ? "What each part of this repo owns — and what does not belong in it."
+          : "Heuristic grouping by top-level directory. Curate .necronomidoc/subsystems.yaml for real boundaries."}
+      </p>
+      {manifest.subsystems.map((s) => (
+        <SubsystemCard key={s.id} subsystem={s} slug={slug} files={model?.files ?? []} />
+      ))}
     </div>
   );
 }

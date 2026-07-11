@@ -22,7 +22,8 @@ export function createMcpServer(store: ManifestStore): McpServer {
   server.registerTool(
     "list_repos",
     {
-      description: "List every documented repository with file/symbol counts and a one-line summary.",
+      description:
+        "List every documented repository with file/symbol counts, a one-line summary, and enrichment coverage. Call this first to discover repo slugs for the other tools.",
       inputSchema: {},
     },
     async () => jsonContent(tools.list_repos(store)),
@@ -32,9 +33,9 @@ export function createMcpServer(store: ManifestStore): McpServer {
     "search_docs",
     {
       description:
-        "Search files and symbols across repos by concept keywords. Returns ranked hits with ids for follow-up get_* calls. Cursor-paginated.",
+        "Search files, symbols, and subsystems across repos by concept keywords. Call this whenever you need to know if something already exists (a helper, hook, component, or a whole subsystem) before writing new code. Returns ranked hits with ids for follow-up get_file_doc / get_function_doc calls. Cursor-paginated.",
       inputSchema: {
-        query: z.string().describe("Search terms (concepts, names, purposes)."),
+        query: z.string().describe("Search terms (concepts, names, purposes — e.g. 'currency formatting')."),
         repo: z.string().optional().describe("Restrict to one repo slug."),
         cursor: z.string().optional().describe("Pagination cursor from a previous response."),
       },
@@ -46,7 +47,7 @@ export function createMcpServer(store: ManifestStore): McpServer {
     "get_file_doc",
     {
       description:
-        "Get a file's purpose plus its symbol inventory (with provenance and staleness). Answers 'what is this file for?'.",
+        "Get a file's purpose plus its full symbol inventory (with provenance and staleness flags — treat `stale: true` summaries as possibly outdated). Call this when you know the file path and need to answer 'what is this file for / what does it export?'.",
       inputSchema: {
         repo: z.string().describe("Repo slug."),
         path: z.string().describe("File path relative to the repo root."),
@@ -59,7 +60,7 @@ export function createMcpServer(store: ManifestStore): McpServer {
     "get_function_doc",
     {
       description:
-        "Get the full documentation for one symbol (function, hook, component, class…) by id or by name within a repo.",
+        "Get the full documentation for one symbol (function, hook, component, class…) — signature, params, props, examples, and its purpose summary. Call this after search_docs to inspect a specific hit by its id, or look a symbol up by bare name within a repo.",
       inputSchema: {
         repo: z.string().describe("Repo slug (used when looking up by name)."),
         id: z.string().optional().describe("Stable symbol id, e.g. 'slug:src/x.ts#Name'."),
@@ -73,7 +74,7 @@ export function createMcpServer(store: ManifestStore): McpServer {
     "get_subsystem_overview",
     {
       description:
-        "Map a repo (or a directory within it) into subsystems with per-file purposes and exports — for scope and separation-of-concerns questions.",
+        "Map a repo into its subsystems: purpose, explicit boundaries (what each subsystem owns and what does NOT belong in it), key entry points, relationships, and member files. Call this for scope / separation-of-concerns questions like 'where does auth logic live and what shouldn't go in it?' or before deciding where new code belongs. Curated maps (provenance human/llm) carry real boundary statements; heuristic ones are directory groupings.",
       inputSchema: {
         repo: z.string().describe("Repo slug."),
         dir: z.string().optional().describe("Directory prefix to scope the overview."),
@@ -85,7 +86,8 @@ export function createMcpServer(store: ManifestStore): McpServer {
   server.registerTool(
     "list_files",
     {
-      description: "List a repo's files with one-line purposes. Cursor-paginated.",
+      description:
+        "List a repo's files with one-line purposes. Call this to orient in an unfamiliar repo when you don't yet have a search term. Cursor-paginated.",
       inputSchema: {
         repo: z.string().describe("Repo slug."),
         cursor: z.string().optional().describe("Pagination cursor from a previous response."),

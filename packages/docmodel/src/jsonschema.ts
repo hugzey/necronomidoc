@@ -1,5 +1,5 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { DocModel, EnrichmentOverlay, Registry } from "./schema.js";
+import { DocModel, EnrichmentOverlay, Registry, SubsystemsManifest } from "./schema.js";
 
 /**
  * Export the public schemas as JSON Schema so non-TS adapter authors (Python,
@@ -10,5 +10,6 @@ export function exportJsonSchemas(): Record<string, unknown> {
     DocModel: zodToJsonSchema(DocModel, "DocModel"),
     EnrichmentOverlay: zodToJsonSchema(EnrichmentOverlay, "EnrichmentOverlay"),
     Registry: zodToJsonSchema(Registry, "Registry"),
+    SubsystemsManifest: zodToJsonSchema(SubsystemsManifest, "SubsystemsManifest"),
   };
 }

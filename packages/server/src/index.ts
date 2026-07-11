@@ -4,6 +4,7 @@ import { loadConfig, type NecronomidocConfig } from "./config.js";
 
 export * from "./config.js";
 export * from "./build.js";
+export * from "./enrich.js";
 export { createApp, type App } from "./app.js";
 export * from "./ingest/registry.js";
 export * from "./ingest/providers.js";

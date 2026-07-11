@@ -268,6 +268,11 @@ export function Sidebar({
           </option>
         ))}
       </select>
+      {slug && (
+        <Link to={`/r/${slug}/subsystems`} className="link-hover link text-sm">
+          Subsystems
+        </Link>
+      )}
       {slug && tree ? (
         <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">
           <TreeItems node={tree} slug={slug} activePath={activePath} depth={0} />
