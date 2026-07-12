@@ -181,6 +181,82 @@ export const EnrichmentOverlay = z.object({
 });
 export type EnrichmentOverlay = z.infer<typeof EnrichmentOverlay>;
 
+// ---- Subsystems (slice 3) ----
+
+/**
+ * A named group of files/directories with a purpose statement and explicit
+ * boundaries — the separation-of-concerns context agents need to avoid
+ * duplicate implementations. Sourced with the usual precedence: human
+ * `subsystems.yaml` > LLM-proposed > heuristic (top-level directories).
+ */
+export const Subsystem = z.object({
+  /** Stable slug id, unique within a repo. */
+  id: z.string(),
+  name: z.string(),
+  /** What this subsystem is for. */
+  purpose: z.string(),
+  /** Boundary statements: what this subsystem owns / is responsible for. */
+  owns: z.array(z.string()).default([]),
+  /** Boundary statements: what does NOT belong in this subsystem. */
+  notOwns: z.array(z.string()).default([]),
+  /** Key entry points (file paths or exported symbol names). */
+  entryPoints: z.array(z.string()).default([]),
+  /** Relationships to other subsystems. */
+  related: z.array(z.object({ name: z.string(), relation: z.string() })).default([]),
+  /** Directory prefixes (repo-relative) whose files belong to this subsystem. */
+  dirs: z.array(z.string()).default([]),
+  provenance: Provenance.default("heuristic"),
+});
+export type Subsystem = z.infer<typeof Subsystem>;
+
+/** The per-repo subsystems manifest, published next to the doc model. */
+export const SubsystemsManifest = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  repo: z.string(),
+  subsystems: z.array(Subsystem).default([]),
+  generatedAt: z.string().optional(),
+});
+export type SubsystemsManifest = z.infer<typeof SubsystemsManifest>;
+
+// ---- Enrichment/staleness report (slice 3) ----
+
+/** One stale overlay flagged in a build's enrichment report. */
+export const StaleOverlayEntry = z.object({
+  targetId: z.string(),
+  path: z.string(),
+  /** Whether the target is a file or a symbol within one. */
+  kind: z.enum(["file", "symbol"]),
+  name: z.string().optional(),
+  provenance: Provenance,
+});
+export type StaleOverlayEntry = z.infer<typeof StaleOverlayEntry>;
+
+/** Aggregate enrichment coverage counts for one repo build. */
+export const EnrichmentTotals = z.object({
+  targets: z.number().int().nonnegative(),
+  human: z.number().int().nonnegative(),
+  llm: z.number().int().nonnegative(),
+  heuristic: z.number().int().nonnegative(),
+  stale: z.number().int().nonnegative(),
+  staleHuman: z.number().int().nonnegative(),
+  staleLlm: z.number().int().nonnegative(),
+});
+export type EnrichmentTotals = z.infer<typeof EnrichmentTotals>;
+
+/**
+ * Written on every rebuild so the status API, site, and `enrich --review-stale`
+ * can list overlays whose underlying code changed (decision 0004: stale human
+ * overlays are flagged for review, never overwritten).
+ */
+export const EnrichmentReport = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  repo: z.string(),
+  totals: EnrichmentTotals,
+  stale: z.array(StaleOverlayEntry).default([]),
+  generatedAt: z.string().optional(),
+});
+export type EnrichmentReport = z.infer<typeof EnrichmentReport>;
+
 // ---- Manifests consumed by the site + MCP ----
 
 /** One repo's summary line in the registry. */
@@ -191,6 +267,8 @@ export const RegistryEntry = z.object({
   symbolCount: z.number().int().nonnegative(),
   summary: z.string().optional(),
   generatedAt: z.string().optional(),
+  /** Enrichment coverage + staleness counts (slice 3; additive). */
+  enrichment: EnrichmentTotals.optional(),
 });
 export type RegistryEntry = z.infer<typeof RegistryEntry>;
 
@@ -204,7 +282,7 @@ export type Registry = z.infer<typeof Registry>;
 /** One row in the serialized search corpus. */
 export const SearchDoc = z.object({
   id: z.string(),
-  type: z.enum(["file", "symbol"]),
+  type: z.enum(["file", "symbol", "subsystem"]),
   repo: z.string(),
   path: z.string(),
   name: z.string(),

@@ -30,9 +30,15 @@ function parseOverlayFile(path: string): Overlay[] {
   return out;
 }
 
+/** Precedence rank when two overlays target the same id (decision 0004). */
+const PROVENANCE_RANK: Record<string, number> = { human: 3, llm: 2, heuristic: 1 };
+
 /**
  * Load enrichment overlays from a set of directories, keyed by target id.
- * Later directories win, so callers pass lower-precedence dirs first. The two
+ * When two overlays target the same id, provenance decides (human > llm >
+ * heuristic) — so an LLM overlay written server-side can never shadow a
+ * human one curated in the repo. Within the same provenance, later
+ * directories win, so callers pass lower-precedence dirs first. The two
  * standard sources: the source repo's `.necronomidoc/enrichment/` (curation
  * next to code) and the server's per-repo data dir.
  */
@@ -40,8 +46,14 @@ export function loadOverlays(dirs: string[]): Map<string, Overlay> {
   const byId = new Map<string, Overlay>();
   for (const dir of dirs) {
     for (const file of walk(dir, [".json", ".yaml", ".yml"])) {
+      // Subsystem definitions share these dirs but are not per-target overlays.
+      if (/^subsystems[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
       for (const overlay of parseOverlayFile(file)) {
-        byId.set(overlay.targetId, overlay);
+        const existing = byId.get(overlay.targetId);
+        const keep =
+          !existing ||
+          (PROVENANCE_RANK[overlay.provenance] ?? 0) >= (PROVENANCE_RANK[existing.provenance] ?? 0);
+        if (keep) byId.set(overlay.targetId, overlay);
       }
     }
   }

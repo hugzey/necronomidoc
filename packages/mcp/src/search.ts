@@ -1,5 +1,10 @@
 import MiniSearch from "minisearch";
-import type { DocModel, DocSymbolShape, SearchDoc } from "@necronomidoc/docmodel";
+import type {
+  DocModel,
+  DocSymbolShape,
+  SearchDoc,
+  SubsystemsManifest,
+} from "@necronomidoc/docmodel";
 
 /** MiniSearch config — must be identical at build time and load time. */
 export const SEARCH_OPTIONS = {
@@ -13,8 +18,11 @@ export const SEARCH_OPTIONS = {
   },
 };
 
-/** Flatten a merged DocModel into search corpus rows (files + symbols). */
-export function buildCorpusDocs(model: DocModel): SearchDoc[] {
+/**
+ * Flatten a merged DocModel into search corpus rows (files + symbols, plus
+ * subsystem overviews when a manifest is provided — slice 3 §3).
+ */
+export function buildCorpusDocs(model: DocModel, subsystems?: SubsystemsManifest): SearchDoc[] {
   const docs: SearchDoc[] = [];
   const repo = model.repo.slug;
 
@@ -63,13 +71,35 @@ export function buildCorpusDocs(model: DocModel): SearchDoc[] {
     };
     walk(file.symbols);
   }
+
+  for (const sub of subsystems?.subsystems ?? []) {
+    docs.push({
+      id: `${repo}:subsystem:${sub.id}`,
+      type: "subsystem",
+      repo,
+      path: sub.dirs[0] ?? "",
+      name: sub.name,
+      summary: sub.purpose,
+      text: [
+        sub.name,
+        sub.purpose,
+        ...sub.owns,
+        ...sub.notOwns,
+        ...sub.entryPoints,
+        ...sub.dirs,
+        ...sub.related.map((r) => `${r.name} ${r.relation}`),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
+  }
   return docs;
 }
 
 /** Build an in-memory MiniSearch index for a repo's corpus. */
-export function buildIndex(model: DocModel): MiniSearch<SearchDoc> {
+export function buildIndex(model: DocModel, subsystems?: SubsystemsManifest): MiniSearch<SearchDoc> {
   const mini = new MiniSearch<SearchDoc>(SEARCH_OPTIONS);
-  mini.addAll(buildCorpusDocs(model));
+  mini.addAll(buildCorpusDocs(model, subsystems));
   return mini;
 }
 

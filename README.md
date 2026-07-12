@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1 and 2 are complete.**
+**Slices 1, 2 and 3 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -23,6 +23,12 @@ binding technical choices.
   — debounced, journaled build queue with atomic publish and a status surface
   ([plan](docs/plans/02-slice-2-automated-ingestion.md),
   [ops guide](docs/ops-ingestion.md)).
+- Slice 3 — enrichment at depth: `necronomidoc enrich` writes LLM purpose
+  summaries for everything a human hasn't curated (content-hash cached, hard
+  budget caps), rebuilds flag stale overlays for review, and curated subsystem
+  maps ("owns X / does not own Y") are served by MCP, search, and the site
+  ([plan](docs/plans/03-slice-3-enrichment.md),
+  [enrichment guide](docs/enrichment.md)).
 
 ## Quick start
 
@@ -41,6 +47,9 @@ node packages/cli/dist/index.js serve --port 4319
 # or register a repo so pushes rebuild it automatically (slice 2)
 node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
   --id widgets --provider github --secret-env WIDGETS_HOOK_SECRET
+
+# fill documentation gaps with LLM summaries (slice 3)
+ANTHROPIC_API_KEY=sk-ant-… node packages/cli/dist/index.js enrich widgets
 ```
 
 Full guide: [docs/usage.md](docs/usage.md).
@@ -51,10 +60,10 @@ Full guide: [docs/usage.md](docs/usage.md).
 |---------|------|
 | `packages/docmodel` | Versioned file-rooted IR + enrichment/manifest schemas (Zod), stable IDs, hashing |
 | `packages/adapter-ts` | TypeScript/React extraction (ts-morph sweep, JSDoc, components, prop tables) |
-| `packages/enrichment` | Heuristic purpose producer + overlay loader + precedence merge + staleness |
+| `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| serve \| repo add\|list\|remove \| validate \| export-schemas` |
+| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search |
 
 ## Tests

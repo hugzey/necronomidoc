@@ -4,9 +4,11 @@ import type {
   DocSymbolShape,
   IngestStatusResponse,
   Registry,
+  Subsystem,
+  SubsystemsManifest,
 } from "@necronomidoc/docmodel";
 
-export type { DocFile, DocModel, DocSymbolShape, Registry };
+export type { DocFile, DocModel, DocSymbolShape, Registry, Subsystem, SubsystemsManifest };
 
 /**
  * Static-export mode: a build script can inline the manifests as a global so
@@ -44,6 +46,18 @@ export function fetchModel(slug: string): Promise<DocModel> {
     return model ? Promise.resolve(model) : Promise.reject(new Error(`no model for ${slug}`));
   }
   return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
+}
+
+/**
+ * The repo's subsystem map (slice 3). Unavailable in static-export mode and
+ * for repos built before slice 3 — both return undefined so the page can
+ * degrade gracefully.
+ */
+export async function fetchSubsystems(slug: string): Promise<SubsystemsManifest | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch(`/data/repos/${slug}/subsystems.json`);
+  if (!res.ok) return undefined;
+  return (await res.json()) as SubsystemsManifest;
 }
 
 // ---- Ingestion status (slice 2) ----

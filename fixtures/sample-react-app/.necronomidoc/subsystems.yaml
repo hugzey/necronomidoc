@@ -1,0 +1,45 @@
+# Human-curated subsystem map for the sample app (slice 3).
+# Defines the COMPLETE map: when this file exists, it replaces LLM proposals
+# and the heuristic directory grouping.
+subsystems:
+  - id: ui
+    name: UI
+    purpose: React components and the app shell — everything the user sees.
+    owns:
+      - rendering and layout
+      - component-local presentation state
+    notOwns:
+      - business logic or data formatting (use utils)
+      - shared state machines (use hooks)
+    entryPoints:
+      - src/App.tsx
+    dirs:
+      - src/components
+    related:
+      - name: state
+        relation: renders state exposed by the hooks subsystem
+
+  - id: state
+    name: State hooks
+    purpose: Reusable stateful hooks shared across the app.
+    owns:
+      - the canonical counter state machine
+    notOwns:
+      - persistence (nothing here survives a reload)
+      - presentation concerns
+    entryPoints:
+      - src/hooks/useCounter.ts
+    dirs:
+      - src/hooks
+
+  - id: utils
+    name: Utilities
+    purpose: Pure, framework-free helpers (formatting).
+    owns:
+      - display formatting for currency and dates
+    notOwns:
+      - React imports of any kind
+    entryPoints:
+      - src/utils/format.ts
+    dirs:
+      - src/utils

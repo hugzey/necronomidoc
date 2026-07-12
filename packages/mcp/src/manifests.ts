@@ -5,7 +5,9 @@ import {
   SCHEMA_VERSION,
   type DocModel,
   type DocSymbolShape,
+  type EnrichmentReport,
   type RegistryEntry,
+  type SubsystemsManifest,
 } from "@necronomidoc/docmodel";
 import { buildIndex, serializeIndex } from "./search.js";
 
@@ -16,6 +18,8 @@ export const paths = {
   docmodel: (repoDir: string) => join(repoDir, "docmodel.json"),
   searchIndex: (repoDir: string) => join(repoDir, "search.json"),
   llmsTxt: (repoDir: string) => join(repoDir, "llms.txt"),
+  subsystems: (repoDir: string) => join(repoDir, "subsystems.json"),
+  enrichmentReport: (repoDir: string) => join(repoDir, "enrichment-report.json"),
 };
 
 function countSymbols(model: DocModel): number {
@@ -31,7 +35,7 @@ function countSymbols(model: DocModel): number {
 }
 
 /** Build the registry summary entry for one repo. */
-export function registryEntryFor(model: DocModel): RegistryEntry {
+export function registryEntryFor(model: DocModel, report?: EnrichmentReport): RegistryEntry {
   return {
     name: model.repo.name,
     slug: model.repo.slug,
@@ -39,6 +43,7 @@ export function registryEntryFor(model: DocModel): RegistryEntry {
     symbolCount: countSymbols(model),
     summary: model.files.find((f) => f.enrichment?.summary)?.enrichment?.summary,
     generatedAt: model.generatedAt,
+    enrichment: report?.totals,
   };
 }
 
@@ -58,16 +63,38 @@ export function renderLlmsTxt(model: DocModel): string {
   return lines.join("\n");
 }
 
+export interface RepoManifestExtras {
+  subsystems?: SubsystemsManifest;
+  enrichmentReport?: EnrichmentReport;
+}
+
 /**
- * Write one repo's manifests (doc model + serialized search index + llms.txt)
- * into `repoDir`. Callers build into a temp dir then atomically rename it into
- * place, so this never has to be transactional itself.
+ * Write one repo's manifests (doc model + serialized search index + llms.txt,
+ * plus the subsystems map and enrichment report when provided) into `repoDir`.
+ * Callers build into a temp dir then atomically rename it into place, so this
+ * never has to be transactional itself.
  */
-export function writeRepoManifests(model: DocModel, repoDir: string): void {
+export function writeRepoManifests(
+  model: DocModel,
+  repoDir: string,
+  extras: RepoManifestExtras = {},
+): void {
   mkdirSync(repoDir, { recursive: true });
   writeFileSync(paths.docmodel(repoDir), JSON.stringify(model, null, 2));
-  writeFileSync(paths.searchIndex(repoDir), serializeIndex(buildIndex(model)));
+  writeFileSync(
+    paths.searchIndex(repoDir),
+    serializeIndex(buildIndex(model, extras.subsystems)),
+  );
   writeFileSync(paths.llmsTxt(repoDir), renderLlmsTxt(model));
+  if (extras.subsystems) {
+    writeFileSync(paths.subsystems(repoDir), JSON.stringify(extras.subsystems, null, 2));
+  }
+  if (extras.enrichmentReport) {
+    writeFileSync(
+      paths.enrichmentReport(repoDir),
+      JSON.stringify(extras.enrichmentReport, null, 2),
+    );
+  }
 }
 
 /** Read the registry manifest, or an empty one if none exists yet. */

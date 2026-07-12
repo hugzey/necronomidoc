@@ -64,10 +64,14 @@ claude mcp add --transport http necronomidoc http://localhost:4319/mcp
 (Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
 tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
 `get_subsystem_overview`, `list_files`. Every response carries provenance
-(`human` / `llm` / `heuristic`) and a `stale` flag.
+(`human` / `llm` / `heuristic`) and a `stale` flag; `get_subsystem_overview`
+serves curated boundaries ("owns X / does not own Y") when a subsystem map
+exists (see [enrichment.md](enrichment.md)).
 
-Try asking your agent: *"what is `src/hooks/useCounter.ts` for?"* or *"is there
-an existing function that formats currency?"*.
+Try asking your agent: *"what is `src/hooks/useCounter.ts` for?"*, *"is there
+an existing function that formats currency?"*, or *"where does counter state
+live and what shouldn't go in it?"*. Measure answer quality with
+`npm run eval:mcp`.
 
 ## Automatic rebuilds on push (slice 2)
 
@@ -98,6 +102,23 @@ curl -X POST localhost:4319/api/build \
 ```
 
 The MCP handler hot-reloads the new manifests immediately — no restart.
+
+## Fill the gaps with LLM summaries (slice 3)
+
+On repos with sparse doc comments, let the LLM overlay writer summarize every
+file and symbol that no human overlay covers:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-…
+node packages/cli/dist/index.js enrich fixtures/sample-react-app --dry-run   # preview
+node packages/cli/dist/index.js enrich fixtures/sample-react-app             # write + republish
+```
+
+Re-runs are free on unchanged code (content-hash cache), human overlays are
+never touched, and `--max-files` / `--max-tokens` cap every run. Add
+`--subsystems` to have the model propose a reviewed subsystem map, and
+`--review-stale` to list human overlays whose code has changed. Full guide:
+[enrichment.md](enrichment.md).
 
 ## Add human enrichment overlays
 

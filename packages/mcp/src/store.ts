@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type MiniSearch from "minisearch";
 import {
   DocModel,
+  SubsystemsManifest,
   fileIdOfSymbol,
   type DocFile,
   type DocSymbolShape,
@@ -15,6 +16,7 @@ interface LoadedRepo {
   entry: RegistryEntry;
   model: DocModel;
   index: MiniSearch<SearchDoc>;
+  subsystems?: SubsystemsManifest;
   /** file id -> file, symbol id -> symbol, for O(1) lookups. */
   filesById: Map<string, DocFile>;
   filesByPath: Map<string, DocFile>;
@@ -23,7 +25,7 @@ interface LoadedRepo {
 
 export interface SearchHit {
   id: string;
-  type: "file" | "symbol";
+  type: SearchDoc["type"];
   repo: string;
   path: string;
   name: string;
@@ -53,6 +55,14 @@ export class ManifestStore {
         if (!existsSync(modelPath) || !existsSync(indexPath)) continue;
         const model = DocModel.parse(JSON.parse(readFileSync(modelPath, "utf8")));
         const index = loadIndex(readFileSync(indexPath, "utf8"));
+        const subsystemsPath = paths.subsystems(repoDir);
+        let subsystems: SubsystemsManifest | undefined;
+        if (existsSync(subsystemsPath)) {
+          const parsed = SubsystemsManifest.safeParse(
+            JSON.parse(readFileSync(subsystemsPath, "utf8")),
+          );
+          if (parsed.success) subsystems = parsed.data;
+        }
         const filesById = new Map<string, DocFile>();
         const filesByPath = new Map<string, DocFile>();
         const symbolsById = new Map<string, DocSymbolShape>();
@@ -67,7 +77,15 @@ export class ManifestStore {
           };
           walk(file.symbols);
         }
-        next.set(entry.slug, { entry, model, index, filesById, filesByPath, symbolsById });
+        next.set(entry.slug, {
+          entry,
+          model,
+          index,
+          subsystems,
+          filesById,
+          filesByPath,
+          symbolsById,
+        });
       }
     }
     this.repos = next;
@@ -89,7 +107,7 @@ export class ManifestStore {
       for (const r of repo.index.search(query)) {
         hits.push({
           id: String(r.id),
-          type: r.type as "file" | "symbol",
+          type: r.type as SearchDoc["type"],
           repo: r.repo,
           path: r.path,
           name: r.name,
@@ -129,5 +147,10 @@ export class ManifestStore {
   listFiles(slug: string): DocFile[] {
     const repo = this.repos.get(slug);
     return repo ? [...repo.filesByPath.values()].sort((a, b) => a.path.localeCompare(b.path)) : [];
+  }
+
+  /** The repo's curated/heuristic subsystem map, if it was published. */
+  getSubsystems(slug: string): SubsystemsManifest | undefined {
+    return this.repos.get(slug)?.subsystems;
   }
 }
