@@ -128,14 +128,16 @@ export const DocFile = z.object({
   path: z.string(),
   contentHash: z.string(),
   /**
-   * How to interpret the file: `source` (code; symbols are declarations) or
+   * How to interpret the file: `source` (code; symbols are declarations),
    * `markdown` (prose; `content` carries the document, symbols are `section`
-   * headings). Additive in schema v1 — absent means `source`.
+   * headings), or `openapi` (an API spec; `content` carries the bundled spec
+   * as JSON, symbols are `endpoint` operations). Additive in schema v1 —
+   * absent means `source`.
    */
-  format: z.enum(["source", "markdown"]).default("source"),
-  /** Document title (markdown: first h1, else the filename). */
+  format: z.enum(["source", "markdown", "openapi"]).default("source"),
+  /** Document title (markdown: first h1; openapi: info.title; else filename). */
   title: z.string().optional(),
-  /** Full document text for prose formats; omitted for source files. */
+  /** Full document text for prose/spec formats; omitted for source files. */
   content: z.string().optional(),
   moduleDoc: DocComment.optional(),
   imports: z.array(ImportRef).default([]),

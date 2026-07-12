@@ -36,3 +36,26 @@ Per [decision 0006](../decisions/0006-intermediate-representation.md), OpenAPI i
 3. A repo with both TS code and a spec shows both, cross-searchable, in one repo section.
 
 **Estimated effort:** ~1–1.5 weeks.
+
+## As built
+
+All acceptance criteria met; decisions recorded in
+[0012](../decisions/0012-openapi-adapter.md):
+
+- `packages/adapter-openapi` sniffs any `.json`/`.yaml`/`.yml` for an
+  `openapi: 3…` key (no filename requirement), validates + bundles with
+  `@readme/openapi-parser`, and emits one `endpoint` symbol per operation
+  (`repo:path/openapi.yaml#get__users__id_`). Swagger 2.0 and invalid specs
+  publish an explanatory page instead of failing the build.
+- The DocFile carries the bundled spec as JSON `content`
+  (`format: "openapi"`); the site renders it natively with daisyUI (no
+  Scalar/fumadocs-openapi — see 0012) as tag-grouped operation cards with
+  parameter/schema/response detail and a per-operation "try it" console
+  (browser-direct calls; CORS reality noted in the UI). Works in the static
+  single-file export. The sidebar gains an "API Reference" section.
+- MCP: endpoints surface in `search_docs`, `get_function_doc` accepts
+  endpoint ids/names (case-insensitive), `get_file_doc` on a spec returns
+  operations grouped by tag, and `llms.txt` doubles as the compact endpoint
+  index. No `get_endpoint_doc` alias — `get_function_doc` proved sufficient.
+- Mixed repos: the adapter runs alongside TS + markdown; `fixtures/sample-api`
+  (TS client + spec + README) covers this in `packages/server/src/build.test.ts`.

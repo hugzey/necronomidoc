@@ -47,8 +47,10 @@ export function buildCorpusDocs(model: DocModel, subsystems?: SubsystemsManifest
         file.enrichment?.purpose,
         file.symbols.map((s) => s.name).join(" "),
         // Prose documents are searchable by their body (bounded to keep the
-        // serialized index proportionate to the corpus).
-        file.content?.slice(0, 4000),
+        // serialized index proportionate to the corpus). Spec files carry
+        // bundled JSON in `content` — indexing that would flood the corpus
+        // with schema boilerplate, and their operations are symbols already.
+        file.format === "markdown" ? file.content?.slice(0, 4000) : undefined,
       ]
         .filter(Boolean)
         .join(" "),

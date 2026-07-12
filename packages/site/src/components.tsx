@@ -248,6 +248,10 @@ export function Sidebar({
 }) {
   const navigate = useNavigate();
   const tree = useMemo(() => (model ? buildTree(model.files) : undefined), [model]);
+  const specFiles = useMemo(
+    () => model?.files.filter((f) => f.format === "openapi") ?? [],
+    [model],
+  );
   return (
     <nav className="flex min-h-full w-72 flex-col gap-3 bg-base-200 p-4">
       <Link to="/" className="text-lg font-bold tracking-tight">
@@ -272,6 +276,20 @@ export function Sidebar({
         <Link to={`/r/${slug}/subsystems`} className="link-hover link text-sm">
           Subsystems
         </Link>
+      )}
+      {slug && specFiles.length > 0 && (
+        <div>
+          <div className="mb-1 text-xs font-medium uppercase text-base-content/50">API Reference</div>
+          <ul className="menu menu-sm w-full p-0">
+            {specFiles.map((f) => (
+              <li key={f.id}>
+                <Link to={fileHref(slug, f.path)} className={f.path === activePath ? "menu-active" : ""}>
+                  {f.title ?? f.path}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {slug && tree ? (
         <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">

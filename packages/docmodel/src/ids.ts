@@ -62,3 +62,13 @@ export function slugifyAnchor(heading: string): string {
     .replace(/[^\w\s-]/g, "")
     .replace(/\s+/g, "-");
 }
+
+/**
+ * Anchor slug for an OpenAPI operation, from its display name
+ * (`GET /users/{id}` → `get__users__id_`). Deterministic per character so ids
+ * stay stable across builds. (Duplicated in packages/site/src/resolve.ts to
+ * keep zod out of the browser bundle — keep the two in sync.)
+ */
+export function slugifyEndpointAnchor(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "_");
+}

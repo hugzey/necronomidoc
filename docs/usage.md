@@ -42,6 +42,30 @@ body.
 
 Flags: `--name <n>`, `--ref <git-ref>`, `--data-dir <dir>`.
 
+## OpenAPI specs → interactive API reference (slice 4)
+
+Any OpenAPI 3.x spec in the repo (`openapi.yaml`, `api/spec.json`, … — found
+by content sniffing, not filename) is documented alongside the code:
+
+- The site's sidebar gains an **API Reference** entry per spec; the page shows
+  operations grouped by tag with parameters, request/response schemas, and a
+  per-operation **Try it** console. Try-it requests go straight from your
+  browser to the target API, so the API must allow the docs origin via CORS.
+- Every operation is an `endpoint` symbol: searchable
+  (`search_docs("create user")` finds `POST /users`), enrichable with
+  overlays, and served by `get_function_doc` (by id or by name, e.g.
+  `"GET /users/{id}"` in any casing). `get_file_doc` on the spec lists
+  operations grouped by tag, and `llms.txt` carries the compact
+  method + path + purpose index.
+- A repo can mix TypeScript and specs — both adapters run and publish under
+  one repo entry (try `fixtures/sample-api`).
+
+Swagger 2.0 is not supported: the spec's page says so instead of documenting
+it (convert to OpenAPI 3.x). A spec-named file (`openapi*`, `swagger*`, …)
+that fails validation gets a page showing the validation error; the rest of
+the repo's docs still build. Sniff-only candidates that fail validation are
+treated as not-specs and skipped.
+
 ## Serve the site + MCP
 
 ```bash

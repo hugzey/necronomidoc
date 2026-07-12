@@ -112,8 +112,9 @@ export function planEnrichment(
   let filesOverCap = 0;
 
   for (const file of model.files) {
-    // Prose documents are their own documentation; source files only.
-    if (file.format === "markdown") continue;
+    // Source files only: prose documents are their own documentation, and
+    // spec formats (openapi) carry their summaries in the spec itself.
+    if (file.format !== "source") continue;
 
     const fileNeed = needsSummary(overlays, file.id, file.contentHash);
     if (fileNeed === "human") skippedHuman++;
