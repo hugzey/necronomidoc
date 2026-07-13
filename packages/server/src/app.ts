@@ -3,8 +3,12 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { Hono, type Context } from "hono";
 import { DocModel, slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
 import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
+import { LlmConfigError } from "@necronomidoc/enrichment";
+import { artefactFilePath, generateArtefact, readArtefactIndex, readArtefactRecord } from "./artefacts.js";
 import { installAuth } from "./auth.js";
 import { buildRepo, looksLikeGitUrl, publishModel } from "./build.js";
+import { ScopeError } from "./scope.js";
+import { generateSkills, readSkillSet, readSkillSetIndex, skillSetZip } from "./skills.js";
 import type { NecronomidocConfig } from "./config.js";
 import { ensureDataDirVersion } from "./datadir.js";
 import { createLogger, requestLogger } from "./logger.js";
@@ -35,6 +39,16 @@ import {
 
 /** Pre-extracted IR uploads larger than this are rejected outright. */
 const MAX_IR_BYTES = 64 * 1024 * 1024;
+
+/** Artefact template uploads larger than this are rejected outright. */
+const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Skill-set/artefact ids appear in URLs and become path segments under the
+ * data dir — restrict to the characters our generators emit so `..`/`/` can
+ * never traverse.
+ */
+const SAFE_ID_RE = /^[a-z0-9+-]+$/;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -389,6 +403,131 @@ export function createApp(config: NecronomidocConfig): App {
         error: message.slice(0, 500),
       });
       return c.json({ error: message }, 500);
+    }
+  });
+
+  // ---- Skills & artefacts (slice 8, decisions 0017/0018) ----
+
+  /** Map generation errors: caller-fixable config/scope problems are 400s. */
+  const generationError = (c: Context, err: unknown): Response => {
+    const status = err instanceof LlmConfigError || err instanceof ScopeError ? 400 : 500;
+    return c.json({ error: (err as Error).message }, status);
+  };
+
+  /** Generation costs tokens/money — same admin gate as ad-hoc /api/build. */
+  const requireAdmin = (c: Context): Response | undefined => {
+    if (!config.token) return c.json({ error: "Generation endpoints disabled (no token set)." }, 403);
+    if (!isAdminRequest(c)) return c.json({ error: "Unauthorized" }, 401);
+    return undefined;
+  };
+
+  app.get("/api/skills", (c) => c.json(readSkillSetIndex(config.dataDir)));
+
+  app.get("/api/skills/:id", (c) => {
+    const id = c.req.param("id");
+    if (!SAFE_ID_RE.test(id)) return c.notFound();
+    const set = readSkillSet(config.dataDir, id);
+    return set ? c.json(set) : c.notFound();
+  });
+
+  app.get("/api/skills/:id/download", async (c) => {
+    const id = c.req.param("id");
+    if (!SAFE_ID_RE.test(id)) return c.notFound();
+    const zip = await skillSetZip(config.dataDir, id);
+    if (!zip) return c.notFound();
+    return new Response(zip, {
+      headers: {
+        "content-type": "application/zip",
+        "content-disposition": `attachment; filename="necronomidoc-skills-${id}.zip"`,
+      },
+    });
+  });
+
+  app.post("/api/skills/generate", async (c) => {
+    const denied = requireAdmin(c);
+    if (denied) return denied;
+    let body: { repos?: string[]; all?: boolean; force?: boolean };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    try {
+      const result = await generateSkills({
+        dataDir: config.dataDir,
+        repos: Array.isArray(body.repos) ? body.repos.map(String) : undefined,
+        all: body.all === true,
+        force: body.force === true,
+      });
+      return c.json(result);
+    } catch (err) {
+      return generationError(c, err);
+    }
+  });
+
+  app.get("/api/artefacts", (c) => c.json(readArtefactIndex(config.dataDir)));
+
+  app.get("/api/artefacts/:id", (c) => {
+    const id = c.req.param("id");
+    if (!SAFE_ID_RE.test(id)) return c.notFound();
+    const record = readArtefactRecord(config.dataDir, id);
+    return record ? c.json(record) : c.notFound();
+  });
+
+  // Download the filled output (or the stored template copy).
+  app.get("/api/artefacts/:id/:which{output|template}", (c) => {
+    const id = c.req.param("id");
+    if (!SAFE_ID_RE.test(id)) return c.notFound();
+    const path = artefactFilePath(config.dataDir, id, c.req.param("which") as "output" | "template");
+    if (!path) return c.notFound();
+    const res = fileResponse(path);
+    if (!res) return c.notFound();
+    const headers = new Headers(res.headers);
+    if (path.endsWith(".docx")) {
+      headers.set(
+        "content-type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
+    } else if (path.endsWith(".md")) {
+      headers.set("content-type", "text/markdown; charset=utf-8");
+    }
+    headers.set("content-disposition", `attachment; filename="${path.split("/").pop()}"`);
+    return new Response(res.body, { headers });
+  });
+
+  // Multipart upload: `template` (file) + `repos` ("all" or "a,b,c").
+  app.post("/api/artefacts/generate", async (c) => {
+    const denied = requireAdmin(c);
+    if (denied) return denied;
+    let form: FormData;
+    try {
+      form = await c.req.formData();
+    } catch {
+      return c.json({ error: "Expected multipart/form-data with a `template` file" }, 400);
+    }
+    const file = form.get("template");
+    if (!file || typeof file === "string" || typeof file.arrayBuffer !== "function") {
+      return c.json({ error: "Missing `template` file field" }, 400);
+    }
+    if (file.size > MAX_TEMPLATE_BYTES) return c.json({ error: "Template too large" }, 413);
+    const reposField = String(form.get("repos") ?? "").trim();
+    const all = reposField === "all";
+    const repos = all
+      ? undefined
+      : reposField
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+    try {
+      const result = await generateArtefact({
+        dataDir: config.dataDir,
+        template: { name: file.name || "template.md", bytes: new Uint8Array(await file.arrayBuffer()) },
+        repos,
+        all,
+      });
+      return c.json(result);
+    } catch (err) {
+      return generationError(c, err);
     }
   });
 

@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1–7 are complete.**
+**Slices 1–8 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -66,6 +66,20 @@ binding technical choices.
   and the top of `llms.txt`
   ([plan](docs/plans/07-core-docs.md), [guide](docs/core-docs.md),
   [decision 0015](docs/decisions/0015-core-docs.md)).
+- Slice 8 — skills, artefacts & the doc standard: `necronomidoc skills`
+  generates **Agent Skills** (portable `SKILL.md` folders) from one, many, or
+  all documented repos — hash-cached, downloadable, browsable on the site
+  ([guide](docs/skills.md), [decision 0017](docs/decisions/0017-skill-generation.md));
+  `necronomidoc artefact` fills a user-provided **.md/.docx template** from
+  repo knowledge — `{{…}}`/`<…>` placeholders replaced with everything
+  outside them preserved, marker-free templates planned into sections
+  ([guide](docs/artefacts.md), [decision 0018](docs/decisions/0018-artefact-generation.md));
+  and a **documentation standard** — conventional, human-complete,
+  agent-optimal — with an `init-docs` scaffolder and advisory `doctor`
+  checks ([the standard](docs/doc-standard.md),
+  [decision 0019](docs/decisions/0019-doc-standard.md)). All three ride the
+  provider-agnostic LLM layer, including the no-API-key agent loop
+  ([plan](docs/plans/08-slice-8-skills-artefacts-doc-standard.md)).
 
 ## Quick start
 
@@ -89,6 +103,15 @@ node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
 # Anthropic / OpenAI / OpenRouter / Azure AI / Ollama / AWS Bedrock, or no
 # API key at all via a local coding agent (see docs/enrichment.md)
 ANTHROPIC_API_KEY=sk-ant-… node packages/cli/dist/index.js enrich widgets
+
+# generate agent skills from everything documented (slice 8)
+node packages/cli/dist/index.js skills --all --out ~/.claude/skills
+
+# fill your own template from repo knowledge (slice 8)
+node packages/cli/dist/index.js artefact release-notes.md --all --out filled.md
+
+# scaffold the documentation standard into a repo (slice 8)
+node packages/cli/dist/index.js init-docs ../widgets
 ```
 
 Full guide: [docs/usage.md](docs/usage.md).
@@ -119,7 +142,7 @@ MCP connects): [EC2](docs/deploy/ec2.md) ·
 | `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API + auth + structured logs), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
+| `packages/cli` | `necronomidoc build \| enrich \| skills \| artefact \| init-docs \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search |
 
 ## Tests
