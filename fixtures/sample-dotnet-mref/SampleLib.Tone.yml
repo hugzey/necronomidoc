@@ -1,0 +1,90 @@
+### YamlMime:ManagedReference
+items:
+- uid: SampleLib.Tone
+  commentId: T:SampleLib.Tone
+  id: Tone
+  parent: SampleLib
+  children:
+  - SampleLib.Tone.Calm
+  - SampleLib.Tone.Excited
+  langs:
+  - csharp
+  - vb
+  name: Tone
+  nameWithType: Tone
+  fullName: SampleLib.Tone
+  type: Enum
+  source:
+    id: Tone
+    path: ../SampleLib/Greeter.cs
+    startLine: 3
+  assemblies:
+  - SampleLib
+  namespace: SampleLib
+  summary: How enthusiastic a greeting should sound.
+  example: []
+  syntax:
+    content: public enum Tone
+    content.vb: Public Enum Tone
+- uid: SampleLib.Tone.Calm
+  commentId: F:SampleLib.Tone.Calm
+  id: Calm
+  parent: SampleLib.Tone
+  langs:
+  - csharp
+  - vb
+  name: Calm
+  nameWithType: Tone.Calm
+  fullName: SampleLib.Tone.Calm
+  type: Field
+  source:
+    id: Calm
+    path: ../SampleLib/Greeter.cs
+    startLine: 6
+  assemblies:
+  - SampleLib
+  namespace: SampleLib
+  summary: A measured greeting.
+  example: []
+  syntax:
+    content: Calm = 0
+    return:
+      type: SampleLib.Tone
+- uid: SampleLib.Tone.Excited
+  commentId: F:SampleLib.Tone.Excited
+  id: Excited
+  parent: SampleLib.Tone
+  langs:
+  - csharp
+  - vb
+  name: Excited
+  nameWithType: Tone.Excited
+  fullName: SampleLib.Tone.Excited
+  type: Field
+  source:
+    id: Excited
+    path: ../SampleLib/Greeter.cs
+    startLine: 9
+  assemblies:
+  - SampleLib
+  namespace: SampleLib
+  summary: An emphatic greeting.
+  example: []
+  syntax:
+    content: Excited = 1
+    return:
+      type: SampleLib.Tone
+references:
+- uid: SampleLib
+  commentId: N:SampleLib
+  href: SampleLib.html
+  name: SampleLib
+  nameWithType: SampleLib
+  fullName: SampleLib
+- uid: SampleLib.Tone
+  commentId: T:SampleLib.Tone
+  parent: SampleLib
+  href: SampleLib.Tone.html
+  name: Tone
+  nameWithType: Tone
+  fullName: SampleLib.Tone

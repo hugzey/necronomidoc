@@ -35,7 +35,7 @@ See the [decision register](../decisions/README.md). In brief:
                                                                        │
                                                                        ▼
                                                         language adapters (per repo config)
-                                                        ts │ openapi │ python │ ...
+                                                 ts │ openapi │ python │ csharp │ ...
                                                                        │  facts only
                                                                        ▼
                                                           DocModel IR (versioned JSON)
@@ -64,6 +64,8 @@ packages/
   docmodel/        IR + enrichment + manifest schemas (Zod), stable IDs, hashing
   adapter-ts/      TypeScript/React extraction adapter
   adapter-openapi/ OpenAPI spec adapter (slice 4)
+  adapter-python/  Python extraction adapter — griffe (slice 5)
+  adapter-csharp/  C#/.NET extraction adapter — docfx ManagedReference (slice 5)
   enrichment/      overlay loading, merge, staleness detection, heuristic producer
   site/            Fumadocs React Router 7 + Vite doc site (builds per-repo static output)
   mcp/             MCP tool implementations over manifests (fetch-portable)
@@ -81,7 +83,7 @@ docs/
 | 2 | Automated ingestion: GitHub/ADO/REST triggers, registry, queue, atomic publish | [02-slice-2-automated-ingestion.md](02-slice-2-automated-ingestion.md) | ✅ Done |
 | 3 | Enrichment at depth: LLM overlay writer, staleness workflow, subsystem overviews | [03-slice-3-enrichment.md](03-slice-3-enrichment.md) | ✅ Done |
 | 4 | OpenAPI adapter + interactive API reference pages | [04-slice-4-openapi.md](04-slice-4-openapi.md) | ✅ Done |
-| 5 | Second language adapter (backend) proving the adapter pattern | [05-slice-5-backend-language.md](05-slice-5-backend-language.md) | Planned |
+| 5 | Backend language adapters (Python + C#) proving the adapter pattern; toolchain packaging, `doctor`, `POST /api/ir` | [05-slice-5-backend-language.md](05-slice-5-backend-language.md) | ✅ Done |
 | 6 | Deployment & ops hardening: Docker, EC2/Azure/on-prem guides, auth, backups | [06-slice-6-deployment-ops.md](06-slice-6-deployment-ops.md) | Planned |
 
 Each slice ends deployed and demoable. Slice order after 2 can be re-prioritized; 4/5 are independent of 3.

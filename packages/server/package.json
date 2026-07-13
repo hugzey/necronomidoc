@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
+    "@necronomidoc/adapter-csharp": "*",
     "@necronomidoc/adapter-markdown": "*",
     "@necronomidoc/adapter-openapi": "*",
+    "@necronomidoc/adapter-python": "*",
     "@necronomidoc/adapter-ts": "*",
     "@necronomidoc/docmodel": "*",
     "@necronomidoc/enrichment": "*",

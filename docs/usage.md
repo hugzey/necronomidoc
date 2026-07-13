@@ -66,6 +66,68 @@ that fails validation gets a page showing the validation error; the rest of
 the repo's docs still build. Sniff-only candidates that fail validation are
 treated as not-specs and skipped.
 
+## Python and C#/.NET repos (slice 5)
+
+Backend repos document exactly like TypeScript ones — `build` just works once
+the host has the language's toolchain:
+
+- **Python** (detected via `pyproject.toml`/`setup.py` or `.py` files): needs a
+  Python 3.9+ interpreter with `pip install "griffe>=1.0"`. The adapter runs a
+  pinned `griffe dump` out of process (static analysis — your code is parsed,
+  never imported). Google/numpy/sphinx docstrings become structured
+  params/returns/raises docs; `src/` layouts, packages, and flat modules are
+  all discovered; private symbols are documented but marked non-exported. Set
+  `NECRONOMIDOC_PYTHON=/path/to/venv/bin/python` to isolate the interpreter.
+- **C#/.NET** (detected via `.csproj`): needs the .NET SDK 8+ and
+  `dotnet tool install -g docfx`. The adapter runs `docfx metadata` (Roslyn)
+  against the repo's projects and maps the ManagedReference output — XML doc
+  comments (`<summary>`, `<param>`, `<returns>`, `<exception>`, `<example>`)
+  become structured docs, grouped per source file with classes/enums keeping
+  their members. The repo must restore/compile on the host (NuGet access).
+  Set `NECRONOMIDOC_DOCFX` to point at a specific docfx executable.
+
+Check what your host can build with:
+
+```bash
+node packages/cli/dist/index.js doctor
+#   ✓ typescript — built in, always available
+#   ✓ python — Python 3.11.15, griffe 2.1.0 (…)
+#   ✗ csharp — missing: docfx (dotnet global tool)
+#       fix: Install the .NET SDK 8+ and `dotnet tool install -g docfx` …
+```
+
+`doctor` also lists registered repos and flags any whose detected languages
+need a toolchain the host is missing (exit code 1). A build that hits a
+missing toolchain fails **that repo's** build with the same actionable fix in
+its status record — the server keeps running and previously published docs
+keep serving.
+
+In Docker, toolchains are opt-in per image:
+
+```bash
+docker build -t necronomidoc --build-arg WITH_PYTHON=1 --build-arg WITH_DOTNET=1 .
+```
+
+### Languages we don't bundle: publish IR from your own CI
+
+Any repo can extract docs itself (in CI, where its toolchain already lives)
+and POST the result — it is served, searched, enriched, and exposed over MCP
+exactly like an adapter build:
+
+```bash
+# validate against the published JSON Schema first (optional but recommended)
+node packages/cli/dist/index.js export-schemas schemas.json
+
+curl -X POST https://docs.example.com/api/ir \
+  -H "Authorization: Bearer $DOCS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data @docmodel.json
+```
+
+The body is a complete DocModel (`schemaVersion: 1`, `repo.slug` must be a
+slug, plus `files[]`). Repos registered with `repo add --api-token-env` can use
+their per-repo token instead of the global one.
+
 ## Serve the site + MCP
 
 ```bash

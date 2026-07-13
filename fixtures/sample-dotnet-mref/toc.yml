@@ -1,0 +1,16 @@
+### YamlMime:TableOfContent
+items:
+- uid: SampleLib
+  name: SampleLib
+  type: Namespace
+  items:
+  - uid: SampleLib.Batch
+    name: Batch
+    type: Class
+  - uid: SampleLib.Greeter
+    name: Greeter
+    type: Class
+  - uid: SampleLib.Tone
+    name: Tone
+    type: Enum
+memberLayout: SamePage

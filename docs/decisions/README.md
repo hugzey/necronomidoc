@@ -16,6 +16,7 @@ Architectural and directional decisions for the documentation server project. On
 | [0010](0010-daisyui-component-base.md) | UI components: Tailwind CSS + daisyUI as the site's component base | Accepted |
 | [0011](0011-llm-overlay-writer.md) | LLM overlay writer: Anthropic SDK client, per-file batching, content-hash caching, hard budget caps | Accepted |
 | [0012](0012-openapi-adapter.md) | OpenAPI adapter: bundled-spec content, native daisyUI reference UI, browser-direct try-it | Accepted |
+| [0013](0013-backend-adapters-toolchains.md) | Backend adapters (Python via griffe, C# via DocFX) + opt-in toolchain packaging, `doctor`, `POST /api/ir` | Accepted |
 
 ## Statuses
 

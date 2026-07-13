@@ -9,6 +9,8 @@
     { "path": "../adapter-ts" },
     { "path": "../adapter-markdown" },
     { "path": "../adapter-openapi" },
+    { "path": "../adapter-python" },
+    { "path": "../adapter-csharp" },
     { "path": "../enrichment" },
     { "path": "../mcp" }
   ],
