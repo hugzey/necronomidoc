@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1–4 are complete.**
+**Slices 1–5 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -34,6 +34,15 @@ binding technical choices.
   operations become searchable, enrichable `endpoint` symbols served by MCP —
   in the same repo entry as the code docs
   ([plan](docs/plans/04-slice-4-openapi.md)).
+- Slice 5 — backend languages: **Python** (via griffe) and **C#/.NET** (via
+  DocFX ManagedReference) repos document end-to-end with zero core changes —
+  proving the adapter pattern. Toolchains are opt-in per host (Docker
+  `--build-arg WITH_PYTHON=1` / `WITH_DOTNET=1`), `necronomidoc doctor`
+  diagnoses what a host is missing, missing toolchains fail a repo's build
+  with an actionable status (never a crash), and `POST /api/ir` lets any
+  language's CI publish pre-extracted docs without a bundled toolchain
+  ([plan](docs/plans/05-slice-5-backend-language.md),
+  [decision 0013](docs/decisions/0013-backend-adapters-toolchains.md)).
 
 ## Quick start
 
@@ -66,10 +75,12 @@ Full guide: [docs/usage.md](docs/usage.md).
 | `packages/docmodel` | Versioned file-rooted IR + enrichment/manifest schemas (Zod), stable IDs, hashing |
 | `packages/adapter-ts` | TypeScript/React extraction (ts-morph sweep, JSDoc, components, prop tables) |
 | `packages/adapter-openapi` | OpenAPI 3.x spec extraction (validate + bundle, one `endpoint` symbol per operation) |
+| `packages/adapter-python` | Python extraction via pinned `griffe dump` (parsed docstrings, signatures; static analysis, out of process) |
+| `packages/adapter-csharp` | C#/.NET extraction via `docfx metadata` ManagedReference YAML (Roslyn-driven, out of process) |
 | `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas` |
+| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas \| doctor` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search |
 
 ## Tests

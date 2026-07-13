@@ -1,10 +1,16 @@
 # Slice 5 — Second language adapter (backend) proving the adapter pattern
 
+**Status: ✅ Done** — shipped **both Python (griffe) and C#/.NET (DocFX ManagedReference)** adapters, the toolchain packaging pattern (opt-in Docker build args + `necronomidoc doctor` + graceful per-repo failure), and the `POST /api/ir` escape hatch. See [decision 0013](../decisions/0013-backend-adapters-toolchains.md).
+
 **Goal (requirement 5, backend leg):** ship one non-TypeScript language adapter end-to-end, validating that the adapter interface, IR, enrichment, site, and MCP genuinely support new languages without core changes — and establish the pattern for packaging language toolchains into the server.
 
 ## Language choice
 
 **Recommended first: Python via griffe** — [research 02](../research/02-doc-extraction-adapters.md) found griffe's JSON object model (`griffe dump`) is the cleanest machine-readable doc model of any backend ecosystem, and Python toolchain packaging is easy. Alternates, in order of adapter ergonomics: C# (DocFX ManagedReference), Go (small custom `go/doc` program), Java (thin custom JSON doclet). **Confirm against the team's actual backend stack before starting** — if the team is C#/.NET, do C# first despite the extra effort; update this plan and the decision register accordingly.
+
+> **Confirmed during the slice:** the team's backend stack includes .NET/C#, so
+> the slice shipped the C# adapter *alongside* Python — proving the toolchain
+> pattern against two different toolchains (pip package vs SDK + global tool).
 
 ## Work breakdown (assuming Python)
 
@@ -29,8 +35,8 @@
 
 ## Acceptance criteria
 
-1. A Python repo registers and documents end-to-end with zero changes to `docmodel`, `site`, `mcp`, or `server` core (adapter registration only).
-2. `POST /api/ir` lets an arbitrary-language repo's CI publish docs without a bundled toolchain.
-3. Missing-toolchain failure is a clear per-repo status, and `necronomidoc doctor` explains the fix.
+1. A Python repo registers and documents end-to-end with zero changes to `docmodel`, `site`, `mcp`, or `server` core (adapter registration only). ✅ *(and a C# repo — both are one-line registrations in `server/src/build.ts`; verified with `fixtures/sample-python` and `fixtures/sample-dotnet` through CLI build → manifests → search → MCP.)*
+2. `POST /api/ir` lets an arbitrary-language repo's CI publish docs without a bundled toolchain. ✅ *(schema-validated, token-authed, same enrichment/atomic-publish/status pipeline; covered by `server/src/ir.test.ts`.)*
+3. Missing-toolchain failure is a clear per-repo status, and `necronomidoc doctor` explains the fix. ✅ *(`ToolchainError` carries an actionable fix into the build record; `doctor` reports per-adapter toolchains and flags blocked registered repos.)*
 
 **Estimated effort:** ~1.5 weeks.

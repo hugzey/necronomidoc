@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { Hono, type Context } from "hono";
-import { slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
+import { DocModel, slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
 import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
-import { buildRepo, looksLikeGitUrl } from "./build.js";
+import { buildRepo, looksLikeGitUrl, publishModel } from "./build.js";
 import type { NecronomidocConfig } from "./config.js";
 import { fetchSource } from "./ingest/fetch.js";
 import {
@@ -25,9 +25,13 @@ import {
 import {
   buildStatusPath,
   readBuildStatus,
+  recordBuild,
   type BuildRecord,
   type BuildStatusFile,
 } from "./ingest/status.js";
+
+/** Pre-extracted IR uploads larger than this are rejected outright. */
+const MAX_IR_BYTES = 64 * 1024 * 1024;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -276,6 +280,84 @@ export function createApp(config: NecronomidocConfig): App {
       return c.json({ ok: true, repo: result.entry, adapter: result.adapter });
     } catch (err) {
       return c.json({ error: (err as Error).message }, 500);
+    }
+  });
+
+  // Pre-extracted IR ingestion (decision 0003's escape hatch, slice 5): a
+  // repo's own CI extracts docs with a toolchain we don't bundle and POSTs
+  // schema-validated DocModel JSON. Same enrichment merge, atomic publish,
+  // registry, and status recording as adapter builds — only the extraction
+  // step is external.
+  app.post("/api/ir", async (c) => {
+    if (!c.req.header("authorization")) {
+      if (!config.token) return c.json({ error: "IR endpoint disabled (no token set)." }, 403);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    const declaredLength = Number(c.req.header("content-length") ?? 0);
+    if (declaredLength > MAX_IR_BYTES) return c.json({ error: "IR payload too large" }, 413);
+
+    let raw: unknown;
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const parsed = DocModel.safeParse(raw);
+    if (!parsed.success) {
+      const issues = parsed.error.issues
+        .slice(0, 10)
+        .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+      return c.json({ error: "Invalid DocModel", issues }, 400);
+    }
+    const model = parsed.data;
+    const slug = slugify(model.repo.slug);
+    if (model.repo.slug !== slug) {
+      return c.json({ error: `repo.slug "${model.repo.slug}" is not a slug — use "${slug}"` }, 400);
+    }
+
+    // A registered repo of the same id may authorize with its scoped token;
+    // anything else needs the global token (same rules as /api/build).
+    const registered = getSourceRepo(config.dataDir, slug);
+    const authorized = authorizeRestTrigger(
+      { authorization: c.req.header("authorization"), repo: registered },
+      { ...providerCtx(), globalToken: config.token || undefined },
+    );
+    if (!authorized) {
+      console.warn(`[ingest] rejected POST /api/ir for "${slug}": bad or missing token`);
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+    try {
+      const { entry } = await queue.withRepoLock(slug, async () =>
+        publishModel(config.dataDir, model),
+      );
+      recordBuild(config.dataDir, {
+        repoId: slug,
+        ref: model.repo.ref ?? "external",
+        commitSha: model.repo.commit,
+        trigger: "external-ir",
+        startedAt,
+        durationMs: Date.now() - t0,
+        result: "ok",
+        fileCount: entry.fileCount,
+        symbolCount: entry.symbolCount,
+      });
+      store.reload(); // hot-reload manifests into the MCP handler + /data
+      return c.json({ ok: true, repo: entry, adapter: "external-ir" });
+    } catch (err) {
+      const message = (err as Error).message;
+      recordBuild(config.dataDir, {
+        repoId: slug,
+        ref: model.repo.ref ?? "external",
+        trigger: "external-ir",
+        startedAt,
+        durationMs: Date.now() - t0,
+        result: "error",
+        error: message.slice(0, 500),
+      });
+      return c.json({ error: message }, 500);
     }
   });
 

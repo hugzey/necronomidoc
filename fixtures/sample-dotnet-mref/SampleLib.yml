@@ -1,0 +1,44 @@
+### YamlMime:ManagedReference
+items:
+- uid: SampleLib
+  commentId: N:SampleLib
+  id: SampleLib
+  children:
+  - SampleLib.Batch
+  - SampleLib.Greeter
+  - SampleLib.Tone
+  langs:
+  - csharp
+  - vb
+  name: SampleLib
+  nameWithType: SampleLib
+  fullName: SampleLib
+  type: Namespace
+  assemblies:
+  - SampleLib
+references:
+- uid: SampleLib.Batch
+  commentId: T:SampleLib.Batch
+  href: SampleLib.Batch.html
+  name: Batch
+  nameWithType: Batch
+  fullName: SampleLib.Batch
+- uid: SampleLib.Tone
+  commentId: T:SampleLib.Tone
+  parent: SampleLib
+  href: SampleLib.Tone.html
+  name: Tone
+  nameWithType: Tone
+  fullName: SampleLib.Tone
+- uid: SampleLib.Greeter
+  commentId: T:SampleLib.Greeter
+  href: SampleLib.Greeter.html
+  name: Greeter
+  nameWithType: Greeter
+  fullName: SampleLib.Greeter
+- uid: SampleLib
+  commentId: N:SampleLib
+  href: SampleLib.html
+  name: SampleLib
+  nameWithType: SampleLib
+  fullName: SampleLib

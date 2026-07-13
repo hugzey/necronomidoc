@@ -2,8 +2,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { CSharpAdapter } from "@necronomidoc/adapter-csharp";
 import { MarkdownAdapter } from "@necronomidoc/adapter-markdown";
 import { OpenApiAdapter } from "@necronomidoc/adapter-openapi";
+import { PythonAdapter } from "@necronomidoc/adapter-python";
 import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
 import {
   SCHEMA_VERSION,
@@ -22,7 +24,18 @@ import {
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
-const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new OpenApiAdapter(), new MarkdownAdapter()];
+const ADAPTERS: DocAdapter[] = [
+  new TypeScriptAdapter(),
+  new PythonAdapter(),
+  new CSharpAdapter(),
+  new OpenApiAdapter(),
+  new MarkdownAdapter(),
+];
+
+/** The registered adapters, in detection order (for `necronomidoc doctor`). */
+export function listAdapters(): readonly DocAdapter[] {
+  return ADAPTERS;
+}
 
 /** Combine per-adapter models into one (first adapter wins on path clashes). */
 function combineModels(models: DocModel[]): DocModel {
@@ -133,15 +146,18 @@ export function overlayDirsFor(dataDir: string, repoDir: string, slug: string): 
 export function publishModel(
   dataDir: string,
   model: DocModel,
-  repoDir: string,
+  /** Omitted for pre-extracted IR (POST /api/ir): only server-side overlays apply. */
+  repoDir?: string,
 ): { model: DocModel; entry: RegistryEntry } {
+  const serverEnrichmentDir = join(dataDir, "enrichment", model.repo.slug);
   const merged = mergeEnrichment(model, {
-    overlayDirs: overlayDirsFor(dataDir, repoDir, model.repo.slug),
+    overlayDirs: repoDir
+      ? overlayDirsFor(dataDir, repoDir, model.repo.slug)
+      : [serverEnrichmentDir],
   });
 
-  const serverEnrichmentDir = join(dataDir, "enrichment", model.repo.slug);
   const subsystems = buildSubsystems(merged, {
-    humanDirs: [join(repoDir, ".necronomidoc"), serverEnrichmentDir],
+    humanDirs: repoDir ? [join(repoDir, ".necronomidoc"), serverEnrichmentDir] : [serverEnrichmentDir],
     llmDir: serverEnrichmentDir,
   });
   const report = computeEnrichmentReport(merged);

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DocModel, exportJsonSchemas, slugify } from "@necronomidoc/docmodel";
 import {
   buildRepo,
+  cloneDirFor,
   enrichRepo,
   KNOWN_PROVIDERS,
+  listAdapters,
   loadConfig,
   purgeRepoDocs,
+  readBuildStatus,
   readSourceRegistry,
   removeClone,
   removeSourceRepo,
@@ -66,6 +69,7 @@ Usage:
   necronomidoc repo remove <id> [--purge] [--data-dir <dir>]
   necronomidoc validate <docmodel.json>
   necronomidoc export-schemas [<out.json>]
+  necronomidoc doctor [--data-dir <dir>]
 
 Env: DOCS_DATA_DIR, PORT, DOCS_TOKEN, SITE_DIR, DOCS_WEBHOOK_SECRET,
      DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS,
@@ -277,6 +281,80 @@ function cmdValidate(flags: Flags): number {
   return 1;
 }
 
+/**
+ * Toolchain health check (slice 5): report each adapter's external toolchain,
+ * then flag registered repos whose languages need a toolchain this host is
+ * missing. Exits 1 when a registered repo is affected.
+ */
+async function cmdDoctor(flags: Flags): Promise<number> {
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+  const adapters = listAdapters();
+
+  console.log("Adapter toolchains:");
+  const missing = new Map<string, string>(); // language → fix
+  for (const adapter of adapters) {
+    if (!adapter.checkToolchain) {
+      console.log(`  ✓ ${adapter.language} — built in, always available`);
+      continue;
+    }
+    const status = await adapter.checkToolchain();
+    if (status.ok) {
+      console.log(`  ✓ ${adapter.language} — ${status.details ?? "ok"}`);
+    } else {
+      console.log(`  ✗ ${adapter.language} — missing: ${(status.missing ?? []).join(", ")}`);
+      if (status.fix) console.log(`      fix: ${status.fix}`);
+      missing.set(adapter.language, status.fix ?? "");
+    }
+  }
+
+  const { repos } = readSourceRegistry(config.dataDir);
+  if (repos.length === 0) {
+    console.log("\nNo repos registered — toolchain gaps above only matter once a repo needs them.");
+    return 0;
+  }
+
+  console.log("\nRegistered repos:");
+  const status = readBuildStatus(config.dataDir);
+  let affected = 0;
+  for (const repo of repos) {
+    const last = status.builds[repo.id]?.[0];
+    const lastLine = last
+      ? last.result === "ok"
+        ? `last build ok (${last.fileCount ?? "?"} files)`
+        : `last build FAILED: ${last.error ?? "unknown error"}`
+      : "never built";
+
+    // Detection needs a working tree; reuse the ingest clone when we have one.
+    const cloneDir = cloneDirFor(config.dataDir, repo.id);
+    let needsLine = "";
+    if (existsSync(cloneDir)) {
+      const needed: string[] = [];
+      const blocked: string[] = [];
+      for (const adapter of adapters) {
+        if (await adapter.detect(cloneDir)) {
+          needed.push(adapter.language);
+          if (missing.has(adapter.language)) blocked.push(adapter.language);
+        }
+      }
+      needsLine = ` — languages: ${needed.join(", ") || "none detected"}`;
+      if (blocked.length > 0) {
+        needsLine += ` — ✗ BLOCKED by missing toolchain: ${blocked.join(", ")}`;
+        affected++;
+      }
+    } else {
+      needsLine = " — not fetched yet (build once to enable language detection)";
+    }
+    console.log(`  ${repo.id} [${repo.provider}] ${lastLine}${needsLine}`);
+  }
+
+  if (affected > 0) {
+    console.log(`\n✗ ${affected} repo(s) need a toolchain this host is missing (fixes above).`);
+    return 1;
+  }
+  console.log("\n✓ no registered repo is blocked by a missing toolchain.");
+  return 0;
+}
+
 function cmdExportSchemas(flags: Flags): number {
   const out = (flags._ as string[])[1];
   const schemas = exportJsonSchemas();
@@ -306,6 +384,8 @@ async function main(): Promise<number> {
       return cmdValidate(flags);
     case "export-schemas":
       return cmdExportSchemas(flags);
+    case "doctor":
+      return cmdDoctor(flags);
     default:
       console.log(USAGE);
       return command ? 1 : 0;

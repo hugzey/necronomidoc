@@ -89,6 +89,33 @@ curl -X POST https://<your-server>/api/build \
 only). Builds always target the repo's tracked branch. The slice-1 ad-hoc form
 `{"path":…}` / `{"repoUrl":…}` still works and requires the global token.
 
+## 4b. Pre-extracted IR from CI — `POST /api/ir` (slice 5)
+
+For repos in languages the server doesn't bundle a toolchain for (or repos
+that can't build on the server), CI extracts the docs itself and posts a
+complete, schema-valid DocModel:
+
+```bash
+curl -X POST https://<your-server>/api/ir \
+  -H 'authorization: Bearer $TOKEN' -H 'content-type: application/json' \
+  --data @docmodel.json               # → 200 with the published registry entry
+```
+
+- The body must validate against the DocModel JSON Schema
+  (`necronomidoc export-schemas`); rejects list the first validation issues.
+- Repo identity comes from `repo.slug` in the body (must be slug-form). If a
+  registered repo has that id, its `apiTokenEnv` token is accepted; otherwise
+  the global token is required.
+- Publication is identical to an adapter build downstream of extraction:
+  server-side enrichment overlays merge, atomic per-repo swap, registry +
+  search + `llms.txt` + MCP, and a `trigger: "external-ir"` record in
+  `status.json`. Payloads over 64 MB are rejected.
+
+Toolchain health for the bundled backend adapters (Python needs
+python3 + griffe, C# needs the .NET SDK + docfx) is reported by
+`necronomidoc doctor`; a build needing a missing toolchain fails that repo's
+build with the fix in its status message and keeps serving the last good docs.
+
 ## 5. Queue behavior
 
 - **Debounce:** rapid pushes coalesce; a trigger for an already-queued repo
