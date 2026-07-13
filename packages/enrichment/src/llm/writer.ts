@@ -5,7 +5,7 @@ import type {
   DocSymbolShape,
   EnrichmentOverlay,
 } from "@necronomidoc/docmodel";
-import type { LlmClient } from "./client.js";
+import type { LlmClient, LlmCompleteRequest } from "./client.js";
 
 /**
  * The LLM overlay writer (slice 3 §1): for each file/symbol lacking a human
@@ -188,6 +188,83 @@ const SYSTEM_PROMPT = [
   "Respond with JSON only, matching the requested schema exactly.",
 ].join(" ");
 
+/**
+ * The full completion request for one work item — shared by the live runner
+ * below and the agent task export (`buildEnrichmentTaskFile`), so both paths
+ * send byte-identical prompts.
+ */
+export function enrichmentRequestFor(
+  item: EnrichmentWorkItem,
+  repoName: string,
+  source: string | undefined,
+): LlmCompleteRequest {
+  return {
+    system: SYSTEM_PROMPT,
+    prompt: buildPrompt(item, repoName, source),
+    maxOutputTokens: Math.min(300 + item.symbols.length * 80, 4000),
+    jsonSchema: RESPONSE_JSON_SCHEMA,
+  };
+}
+
+/**
+ * What the response applier needs to know about the targets a task covered —
+ * the id/hash skeleton of an `EnrichmentWorkItem`, serializable into agent
+ * task files so imports can stamp overlays without re-deriving the plan.
+ */
+export interface EnrichmentTargetMeta {
+  fileId: string;
+  fileContentHash: string;
+  enrichFile: boolean;
+  symbols: { id: string; contentHash: string }[];
+}
+
+export function targetMetaFor(item: EnrichmentWorkItem): EnrichmentTargetMeta {
+  return {
+    fileId: item.file.id,
+    fileContentHash: item.file.contentHash,
+    enrichFile: item.enrichFile,
+    symbols: item.symbols.map((s) => ({ id: s.id, contentHash: s.contentHash })),
+  };
+}
+
+/**
+ * Parse one model response and stamp the resulting `provenance: llm` overlays
+ * (hashes from the target meta, for staleness tracking). Symbol entries whose
+ * id wasn't requested — hallucinated or duplicated — are dropped. Shared by
+ * the live runner and the agent results import. Throws on malformed JSON.
+ */
+export function overlaysFromEnrichmentResponse(
+  target: EnrichmentTargetMeta,
+  text: string,
+  now: () => string,
+): EnrichmentOverlay[] {
+  const parsed = LlmFileResponse.parse(JSON.parse(text));
+  const overlays: EnrichmentOverlay[] = [];
+  const stamp = { provenance: "llm" as const, updatedAt: now() };
+  if (target.enrichFile) {
+    overlays.push({
+      targetId: target.fileId,
+      summary: parsed.file.summary,
+      purpose: parsed.file.purpose,
+      sourceContentHash: target.fileContentHash,
+      ...stamp,
+    });
+  }
+  const wanted = new Map(target.symbols.map((s) => [s.id, s]));
+  for (const entry of parsed.symbols) {
+    const symbol = wanted.get(entry.id);
+    if (!symbol) continue; // hallucinated or duplicate id — drop it
+    overlays.push({
+      targetId: symbol.id,
+      summary: entry.summary,
+      sourceContentHash: symbol.contentHash,
+      ...stamp,
+    });
+    wanted.delete(entry.id);
+  }
+  return overlays;
+}
+
 function buildPrompt(item: EnrichmentWorkItem, repoName: string, source: string | undefined): string {
   const { file } = item;
   const lines: string[] = [
@@ -261,42 +338,13 @@ export async function runLlmEnrichment(
       report.aborted = true;
       break;
     }
-    const prompt = buildPrompt(item, model.repo.name, options.readSource(item.file.path));
-    const maxOutputTokens = Math.min(300 + item.symbols.length * 80, 4000);
+    const request = enrichmentRequestFor(item, model.repo.name, options.readSource(item.file.path));
     try {
-      const result = await options.client.complete({
-        system: SYSTEM_PROMPT,
-        prompt,
-        maxOutputTokens,
-        jsonSchema: RESPONSE_JSON_SCHEMA,
-      });
+      const result = await options.client.complete(request);
       report.calls++;
       report.inputTokens += result.inputTokens;
       report.outputTokens += result.outputTokens;
-
-      const parsed = LlmFileResponse.parse(JSON.parse(result.text));
-      const stamp = { provenance: "llm" as const, updatedAt: now() };
-      if (item.enrichFile) {
-        overlays.push({
-          targetId: item.file.id,
-          summary: parsed.file.summary,
-          purpose: parsed.file.purpose,
-          sourceContentHash: item.file.contentHash,
-          ...stamp,
-        });
-      }
-      const wanted = new Map(item.symbols.map((s) => [s.id, s]));
-      for (const entry of parsed.symbols) {
-        const symbol = wanted.get(entry.id);
-        if (!symbol) continue; // hallucinated or duplicate id — drop it
-        overlays.push({
-          targetId: symbol.id,
-          summary: entry.summary,
-          sourceContentHash: symbol.contentHash,
-          ...stamp,
-        });
-        wanted.delete(entry.id);
-      }
+      overlays.push(...overlaysFromEnrichmentResponse(targetMetaFor(item), result.text, now));
     } catch (err) {
       report.failures.push({ path: item.file.path, error: (err as Error).message });
     }

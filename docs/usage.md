@@ -217,9 +217,22 @@ On repos with sparse doc comments, let the LLM overlay writer summarize every
 file and symbol that no human overlay covers:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-…
+export ANTHROPIC_API_KEY=sk-ant-…   # or any other provider — see below
 node packages/cli/dist/index.js enrich fixtures/sample-react-app --dry-run   # preview
 node packages/cli/dist/index.js enrich fixtures/sample-react-app             # write + republish
+```
+
+The writer is provider-agnostic (decision
+[0016](decisions/0016-llm-provider-agnostic.md)): Anthropic, OpenAI,
+OpenRouter, Azure AI, Ollama, or any OpenAI-compatible endpoint via API key
+(auto-detected, or `--provider` / `--model` / `--base-url`), plus AWS Bedrock
+through the standard AWS credential chain. No API key at all? Export the work
+as a task file and let a local coding agent do the writing:
+
+```bash
+node packages/cli/dist/index.js enrich <target> --export-tasks tasks.json
+# have your agent (Claude Code, Codex CLI, …) complete tasks.json → results.json
+node packages/cli/dist/index.js enrich <target> --import-results results.json --tasks tasks.json
 ```
 
 Re-runs are free on unchanged code (content-hash cache), human overlays are

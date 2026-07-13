@@ -55,13 +55,18 @@ file and no override — one call per missing document, same client, model
 flags and token budget as the overlay writer:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-…
+export ANTHROPIC_API_KEY=sk-ant-…   # or any provider / no key at all —
+                                    # see enrichment.md "Choosing a provider"
 node packages/cli/dist/index.js enrich <repo-id-or-path-or-url>
 #   core docs: 3 written (1 curated, 0 cached)
 
 node packages/cli/dist/index.js enrich <target> --dry-run       # plan only
 node packages/cli/dist/index.js enrich <target> --no-core-docs  # opt out
 ```
+
+Core-doc generation rides along in agent mode too: `enrich --export-tasks`
+includes one task per missing document, and `--import-results` publishes
+them through the same repo-hash cache.
 
 Cost controls, matching the overlay writer:
 

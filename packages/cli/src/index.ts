@@ -6,8 +6,11 @@ import {
   buildRepo,
   cloneDirFor,
   enrichRepo,
+  exportEnrichTasks,
   exportState,
+  importEnrichResults,
   KNOWN_PROVIDERS,
+  LLM_PROVIDERS,
   listAdapters,
   loadConfig,
   purgeRepoDocs,
@@ -60,8 +63,10 @@ const USAGE = `necronomidoc — team documentation server
 Usage:
   necronomidoc build <path-or-git-url> [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc enrich <repo-id-or-path-or-url> [--dry-run] [--max-files <n>]
-                 [--max-tokens <n>] [--model <id>] [--subsystems] [--no-core-docs]
-                 [--review-stale] [--name <n>] [--ref <ref>] [--data-dir <dir>]
+                 [--max-tokens <n>] [--provider <p>] [--model <id>] [--base-url <url>]
+                 [--subsystems] [--no-core-docs] [--review-stale]
+                 [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
+                 [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
@@ -75,8 +80,13 @@ Usage:
 
 Env: DOCS_DATA_DIR, PORT, DOCS_TOKEN, SITE_DIR, DOCS_WEBHOOK_SECRET,
      DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS,
-     DOCS_AUTH_REQUIRED, DOCS_SESSION_SECRET, DOCS_LOG_FORMAT,
-     ANTHROPIC_API_KEY (enrich), NECRONOMIDOC_ENRICH_MODEL (enrich)
+     DOCS_AUTH_REQUIRED, DOCS_SESSION_SECRET, DOCS_LOG_FORMAT
+
+Enrich LLM providers (--provider ${LLM_PROVIDERS.join(" | ")}, auto-detected from keys):
+     ANTHROPIC_API_KEY | OPENAI_API_KEY | OPENROUTER_API_KEY | AZURE_OPENAI_API_KEY
+     NECRONOMIDOC_LLM_PROVIDER, NECRONOMIDOC_LLM_MODEL, NECRONOMIDOC_LLM_BASE_URL,
+     NECRONOMIDOC_LLM_API_KEY — bedrock uses the AWS credential chain.
+     No key? Use --export-tasks + a local coding agent + --import-results.
 `;
 
 async function cmdBuild(flags: Flags): Promise<number> {
@@ -128,20 +138,87 @@ async function cmdEnrich(flags: Flags): Promise<number> {
     return 0;
   }
 
-  const dryRun = flags["dry-run"] === true;
-  if (!dryRun && !process.env["ANTHROPIC_API_KEY"]) {
-    console.error(
-      "enrich: set ANTHROPIC_API_KEY (or use --dry-run to preview without calling the API).",
+  // Agent mode, step 1: write the planned prompts to a task file for a local
+  // coding agent to complete — no provider API key involved.
+  const exportTasks = str(flags, "export-tasks");
+  if (exportTasks) {
+    const result = await exportEnrichTasks({
+      dataDir: config.dataDir,
+      target,
+      name: str(flags, "name"),
+      ref: str(flags, "ref"),
+      maxFiles: int(flags, "max-files"),
+      subsystems: flags["subsystems"] === true,
+      coreDocs: flags["no-core-docs"] === true ? false : undefined,
+      outFile: exportTasks,
+    });
+    const total =
+      result.fileTasks + result.coreDocTasks.length + (result.subsystemsTask ? 1 : 0);
+    console.log(`✓ exported ${total} enrichment task${total === 1 ? "" : "s"} for ${result.slug} → ${result.outFile}`);
+    console.log(
+      `  ${result.fileTasks} file summaries` +
+        (result.coreDocTasks.length > 0 ? `, core docs: ${result.coreDocTasks.join(", ")}` : "") +
+        (result.subsystemsTask ? ", 1 subsystem map" : ""),
     );
-    return 1;
+    console.log(
+      `  skipped: ${result.skippedHuman} human-curated, ${result.skippedFresh} unchanged (hash cache)` +
+        (result.filesOverCap ? `, ${result.filesOverCap} files over --max-files cap` : ""),
+    );
+    if (total === 0) {
+      console.log("  nothing to generate — everything is curated or cached.");
+    } else {
+      console.log("Next: have your coding agent complete the task file (instructions are inside), then:");
+      console.log(`  necronomidoc enrich ${target} --import-results <results.json> --tasks ${exportTasks}`);
+    }
+    return 0;
   }
 
+  // Agent mode, step 2: validate + publish the agent's results.
+  const importResults = str(flags, "import-results");
+  if (importResults) {
+    const tasksFile = str(flags, "tasks");
+    if (!tasksFile) {
+      console.error(
+        "enrich: --import-results needs --tasks <tasks.json> (the file written by --export-tasks).",
+      );
+      return 1;
+    }
+    const result = await importEnrichResults({
+      dataDir: config.dataDir,
+      target,
+      name: str(flags, "name"),
+      ref: str(flags, "ref"),
+      resultsFile: importResults,
+      tasksFile,
+    });
+    console.log(`✓ imported ${result.applied} results for ${result.slug}`);
+    console.log(
+      `  ${result.overlaysWritten} overlays, ${result.coreDocsWritten} core docs` +
+        (result.subsystemsProposed !== undefined
+          ? `, ${result.subsystemsProposed} subsystems proposed`
+          : ""),
+    );
+    if (result.missingTasks.length > 0) {
+      console.warn(
+        `  ⚠ ${result.missingTasks.length} task(s) had no result (re-run the agent or re-export): ${result.missingTasks.slice(0, 5).join(", ")}${result.missingTasks.length > 5 ? ", …" : ""}`,
+      );
+    }
+    for (const id of result.unmatchedResults) {
+      console.warn(`  ⚠ ignored result with unknown or duplicate id: ${id}`);
+    }
+    for (const failure of result.failures) console.warn(`  ✗ ${failure.id}: ${failure.error}`);
+    return result.failures.length > 0 && result.applied === 0 ? 1 : 0;
+  }
+
+  const dryRun = flags["dry-run"] === true;
   const result = await enrichRepo({
     dataDir: config.dataDir,
     target,
     name: str(flags, "name"),
     ref: str(flags, "ref"),
-    model: str(flags, "model") ?? process.env["NECRONOMIDOC_ENRICH_MODEL"],
+    provider: str(flags, "provider"),
+    model: str(flags, "model"),
+    baseUrl: str(flags, "base-url"),
     maxFiles: int(flags, "max-files"),
     maxTokens: int(flags, "max-tokens"),
     dryRun,

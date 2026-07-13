@@ -14,7 +14,7 @@ target with fixed precedence:
 ## Run the LLM overlay writer
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-…
+export ANTHROPIC_API_KEY=sk-ant-…   # or any provider — see "Choosing a provider"
 
 # preview: what would be summarized, zero API calls
 node packages/cli/dist/index.js enrich fixtures/sample-react-app --dry-run
@@ -48,7 +48,78 @@ what was skipped.
 | `--max-files <n>` | 200 | at most n files per run; the rest wait for the next run |
 | `--max-tokens <n>` | 400000 | total token budget (input+output); hitting it aborts gracefully, keeping overlays generated so far |
 | `--dry-run` | off | plan + report only, no calls, nothing written |
-| `--model <id>` | `claude-opus-4-8` | any Anthropic model id (`NECRONOMIDOC_ENRICH_MODEL` env var works too) |
+| `--model <id>` | provider default | model id as your provider knows it (`NECRONOMIDOC_LLM_MODEL` env var works too) |
+
+## Choosing a provider
+
+The writer talks to a one-method `LlmClient` interface, so any provider slots
+in (decision [0016](decisions/0016-llm-provider-agnostic.md)). With exactly
+one provider's key in the environment, `enrich` auto-detects it; with several
+(or none), pick explicitly with `--provider` / `NECRONOMIDOC_LLM_PROVIDER`.
+
+| Provider | Select with | Credentials | Notes |
+|---|---|---|---|
+| Anthropic | auto, or `--provider anthropic` | `ANTHROPIC_API_KEY` | default model `claude-opus-4-8`; JSON schema enforced server-side |
+| OpenAI | auto, or `--provider openai` | `OPENAI_API_KEY` | `--model` required |
+| OpenRouter | auto, or `--provider openrouter` | `OPENROUTER_API_KEY` | any OpenRouter model id, e.g. `--model openrouter/auto` |
+| Azure AI / Azure OpenAI | auto, or `--provider azure` | `AZURE_OPENAI_API_KEY` (or `AZURE_AI_API_KEY`) | needs `--base-url https://<resource>.openai.azure.com/openai/v1` |
+| Ollama (local) | `--provider ollama` | none | defaults to `http://localhost:11434/v1`; `--model` required |
+| Any OpenAI-compatible endpoint | `--provider openai` + `--base-url` | `NECRONOMIDOC_LLM_API_KEY` if needed | vLLM, LM Studio, LiteLLM, Groq, Together, … |
+| AWS Bedrock | `--provider bedrock` (never auto-detected) | AWS credential chain (env vars, profiles, SSO, IAM role) | `--model` is the Bedrock model/inference-profile id, e.g. `us.anthropic.claude-opus-4-8-v1:0`; region from `AWS_REGION` |
+
+Generic env vars work for every provider: `NECRONOMIDOC_LLM_PROVIDER`,
+`NECRONOMIDOC_LLM_MODEL` (alias: the older `NECRONOMIDOC_ENRICH_MODEL`),
+`NECRONOMIDOC_LLM_BASE_URL`, `NECRONOMIDOC_LLM_API_KEY`.
+
+```bash
+# OpenRouter
+OPENROUTER_API_KEY=sk-or-… node packages/cli/dist/index.js enrich <target> --model anthropic/claude-opus-4.8
+
+# Azure
+AZURE_OPENAI_API_KEY=… node packages/cli/dist/index.js enrich <target> \
+  --provider azure --base-url https://myres.openai.azure.com/openai/v1 --model my-deployment
+
+# Bedrock (uses your AWS profile / role)
+AWS_REGION=us-east-1 node packages/cli/dist/index.js enrich <target> \
+  --provider bedrock --model us.anthropic.claude-opus-4-8-v1:0
+
+# Local Ollama
+node packages/cli/dist/index.js enrich <target> --provider ollama --model qwen3
+```
+
+Structured output is enforced server-side where the provider supports it
+(Anthropic, OpenAI-compatible `response_format`); elsewhere the schema is
+embedded in the prompt and zod validation is the backstop — malformed
+responses are reported per file and never published.
+
+## Agent-based enrichment (no API key)
+
+If you already pay for a CLI coding agent (Claude Code, Codex CLI, …), it can
+write the enrichment data locally — no provider key, no per-token bill. The
+plan (and its hash-cache/curation skips) is identical to a live run; only the
+transport differs:
+
+```bash
+# 1. export every planned prompt to a task file
+node packages/cli/dist/index.js enrich <target> --export-tasks tasks.json
+
+# 2. point your agent at it — instructions for the agent are embedded, e.g.:
+#      "Complete the enrichment tasks in tasks.json and write results.json
+#       as its instructions describe."
+
+# 3. validate + publish the results
+node packages/cli/dist/index.js enrich <target> --import-results results.json --tasks tasks.json
+```
+
+- The task file carries one task per file (same batched prompt as a live run)
+  plus core-doc tasks and — with `--subsystems` — a subsystem-map task.
+- The import validates every result against the task it answers (schema,
+  echoed symbol ids); bad entries are reported and skipped, never published.
+- Overlays are stamped with the content hashes captured at export time, so if
+  code changed in between they surface as **stale** through the normal
+  staleness workflow and regenerate next run — no special case.
+- Re-running `--export-tasks` after an import produces an empty task file:
+  the hash cache sees everything as fresh.
 
 ## Staleness workflow
 

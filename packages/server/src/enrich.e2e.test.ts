@@ -1,17 +1,22 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   CoreDocsManifest,
   DocModel,
   SubsystemsManifest,
   type EnrichmentOverlay,
 } from "@necronomidoc/docmodel";
-import type { LlmClient, LlmCompleteRequest } from "@necronomidoc/enrichment";
+import {
+  EnrichmentTaskFile,
+  type EnrichmentResultsFile,
+  type LlmClient,
+  type LlmCompleteRequest,
+} from "@necronomidoc/enrichment";
 import { ManifestStore, paths, readRegistry, tools } from "@necronomidoc/mcp";
-import { enrichRepo, reviewStale } from "./enrich.js";
+import { enrichRepo, exportEnrichTasks, importEnrichResults, reviewStale } from "./enrich.js";
 
 const fixture = fileURLToPath(new URL("../../../fixtures/sample-react-app", import.meta.url));
 
@@ -201,5 +206,142 @@ describe("enrich pipeline over the sample fixture", () => {
   it("review-stale reports cleanly when nothing is stale", async () => {
     const review = await reviewStale({ dataDir, target: fixture });
     expect(review).toContain("No stale overlays");
+  });
+
+  it("dry-run works without any provider configured (agent-mode users have no keys)", async () => {
+    for (const name of [
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "OPENROUTER_API_KEY",
+      "AZURE_OPENAI_API_KEY",
+      "AZURE_AI_API_KEY",
+      "NECRONOMIDOC_LLM_PROVIDER",
+      "NECRONOMIDOC_LLM_BASE_URL",
+    ]) {
+      vi.stubEnv(name, "");
+    }
+    try {
+      const scratch = mkdtempSync(join(tmpdir(), "necro-enrich-nokey-"));
+      try {
+        const result = await enrichRepo({ dataDir: scratch, target: fixture, dryRun: true });
+        expect(result.published).toBe(false);
+        expect(result.report.plannedFiles).toBeGreaterThan(0);
+        // A real run without configuration fails fast with the config hint.
+        await expect(enrichRepo({ dataDir: scratch, target: fixture })).rejects.toThrow(
+          /No LLM provider configured/,
+        );
+      } finally {
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("agent-mode enrichment: export tasks → complete offline → import results", () => {
+  let dataDir: string;
+
+  beforeAll(() => {
+    dataDir = mkdtempSync(join(tmpdir(), "necro-enrich-agent-"));
+  });
+  afterAll(() => {
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("round-trips: the imported results publish exactly like a live enrich run", async () => {
+    const tasksPath = join(dataDir, "tasks.json");
+    const exported = await exportEnrichTasks({
+      dataDir,
+      target: fixture,
+      subsystems: true,
+      outFile: tasksPath,
+    });
+    expect(exported.slug).toBe("sample-react-app");
+    expect(exported.fileTasks).toBeGreaterThan(0);
+    expect(exported.skippedHuman).toBe(2); // same plan as a live run
+    // The fixture curates architecture.md; the other three kinds need tasks.
+    expect(exported.coreDocTasks).toEqual(["overview", "conventions", "packages"]);
+
+    const taskFile = EnrichmentTaskFile.parse(JSON.parse(readFileSync(tasksPath, "utf8")));
+    expect(taskFile.instructions).toContain("--import-results");
+
+    // Stand in for the coding agent: complete every task per its schema.
+    const results: EnrichmentResultsFile = {
+      formatVersion: 1,
+      repo: taskFile.repo.slug,
+      model: "test-agent",
+      results: taskFile.tasks.map((task) => {
+        if (task.kind === "file-summary") {
+          return {
+            id: task.id,
+            output: {
+              file: { summary: "Agent file summary.", purpose: "Agent purpose." },
+              symbols: task.target!.symbols.map((s) => ({
+                id: s.id,
+                summary: `Agent summary for ${s.id.split("#").pop()}.`,
+              })),
+            },
+          };
+        }
+        if (task.kind === "core-doc") {
+          return {
+            id: task.id,
+            output: {
+              title: `Agent ${task.coreDoc!.kind}`,
+              content: `# Agent ${task.coreDoc!.kind}\n\nWritten offline.`,
+            },
+          };
+        }
+        return {
+          id: task.id,
+          output: {
+            subsystems: [{ name: "App", purpose: "The whole sample app.", dirs: ["src"] }],
+          },
+        };
+      }),
+    };
+    const resultsPath = join(dataDir, "results.json");
+    writeFileSync(resultsPath, JSON.stringify(results));
+
+    const imported = await importEnrichResults({
+      dataDir,
+      target: fixture,
+      resultsFile: resultsPath,
+      tasksFile: tasksPath,
+    });
+    expect(imported.slug).toBe("sample-react-app");
+    expect(imported.failures).toEqual([]);
+    expect(imported.missingTasks).toEqual([]);
+    expect(imported.overlaysWritten).toBeGreaterThan(0);
+    expect(imported.coreDocsWritten).toBe(3);
+    expect(imported.subsystemsProposed).toBe(1);
+    expect(imported.published).toBe(true);
+
+    // Published like a live run: summaries everywhere, human curation intact.
+    const model = DocModel.parse(
+      JSON.parse(readFileSync(paths.docmodel(paths.repoDir(dataDir, imported.slug)), "utf8")),
+    );
+    for (const file of model.files.filter((f) => f.format === "source")) {
+      expect(file.enrichment?.summary, file.path).toBeTruthy();
+    }
+    const format = model.files.find((f) => f.path === "src/utils/format.ts")!;
+    expect(format.enrichment?.provenance).toBe("human");
+
+    const coreDocs = CoreDocsManifest.parse(
+      JSON.parse(readFileSync(paths.coreDocs(paths.repoDir(dataDir, imported.slug)), "utf8")),
+    );
+    const overview = coreDocs.docs.find((d) => d.kind === "overview")!;
+    expect(overview.provenance).toBe("llm");
+    expect(overview.stale).toBe(false); // repo unchanged since export → fresh
+    expect(overview.content).toContain("Written offline.");
+  });
+
+  it("a second export on the imported state finds nothing left to do", async () => {
+    const tasksPath = join(dataDir, "tasks-2.json");
+    const exported = await exportEnrichTasks({ dataDir, target: fixture, outFile: tasksPath });
+    expect(exported.fileTasks).toBe(0);
+    expect(exported.coreDocTasks).toEqual([]);
+    expect(exported.skippedFresh).toBeGreaterThan(0);
   });
 });
