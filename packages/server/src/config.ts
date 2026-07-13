@@ -21,6 +21,17 @@ export interface NecronomidocConfig {
   buildConcurrency: number;
   /** Per-build timeout (ms). */
   buildTimeoutMs: number;
+  /**
+   * When true, the whole surface (site, /data, /mcp, admin) requires the shared
+   * token — via a session-cookie login for browsers or `Authorization: Bearer`
+   * for MCP/admin/CI. Requires `token` to be set (the server refuses to start
+   * otherwise). Leave off to run behind reverse-proxy auth (decision 0014).
+   */
+  authRequired: boolean;
+  /** HMAC key for session cookies; falls back to `token` when empty. */
+  sessionSecret: string;
+  /** Log line format: structured JSON (default) or human-readable text. */
+  logFormat: "json" | "text";
 }
 
 const DEFAULTS: NecronomidocConfig = {
@@ -32,6 +43,9 @@ const DEFAULTS: NecronomidocConfig = {
   debounceMs: 10_000,
   buildConcurrency: 1,
   buildTimeoutMs: 10 * 60_000,
+  authRequired: false,
+  sessionSecret: "",
+  logFormat: "json",
 };
 
 /**
@@ -60,6 +74,11 @@ export function loadConfig(overrides: Partial<NecronomidocConfig> = {}): Necrono
     env.buildConcurrency = Number.parseInt(process.env.DOCS_BUILD_CONCURRENCY, 10);
   if (process.env.DOCS_BUILD_TIMEOUT_MS)
     env.buildTimeoutMs = Number.parseInt(process.env.DOCS_BUILD_TIMEOUT_MS, 10);
+  if (process.env.DOCS_AUTH_REQUIRED)
+    env.authRequired = /^(1|true|yes)$/i.test(process.env.DOCS_AUTH_REQUIRED);
+  if (process.env.DOCS_SESSION_SECRET) env.sessionSecret = process.env.DOCS_SESSION_SECRET;
+  if (process.env.DOCS_LOG_FORMAT === "json" || process.env.DOCS_LOG_FORMAT === "text")
+    env.logFormat = process.env.DOCS_LOG_FORMAT;
 
   const defined = <T extends object>(o: T): Partial<T> =>
     Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;

@@ -1,0 +1,30 @@
+# Reference deployment (slice 6): one container, one named volume.
+# All persistent state lives in the volume — snapshot it and you have a
+# complete backup (see docs/deploy/backup-restore.md).
+#
+#   DOCS_TOKEN=$(openssl rand -hex 32) DOCS_WEBHOOK_SECRET=$(openssl rand -hex 32) \
+#     docker compose up -d --build
+#
+# For Python/C# repo support add build args (see Dockerfile header):
+#   docker compose build --build-arg WITH_PYTHON=1 --build-arg WITH_DOTNET=1
+
+services:
+  necronomidoc:
+    build: .
+    # or, once published: image: ghcr.io/<org>/necronomidoc:latest
+    ports:
+      - "4319:4319"
+    volumes:
+      - docs-data:/data
+    environment:
+      # Shared access token: bearer token for MCP/admin API, and the login
+      # password when DOCS_AUTH_REQUIRED=1. Generate with `openssl rand -hex 32`.
+      DOCS_TOKEN: ${DOCS_TOKEN:?set DOCS_TOKEN}
+      # Set to 1 to make the whole site/MCP surface team-private.
+      DOCS_AUTH_REQUIRED: ${DOCS_AUTH_REQUIRED:-0}
+      # Fallback HMAC secret for GitHub/ADO webhooks (per-repo secretEnv wins).
+      DOCS_WEBHOOK_SECRET: ${DOCS_WEBHOOK_SECRET:-}
+    restart: unless-stopped
+
+volumes:
+  docs-data:

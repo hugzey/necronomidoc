@@ -1,0 +1,42 @@
+# systemd unit for the bare-metal path (slice 6 packaging).
+#
+# Install:
+#   sudo useradd --system --home /var/lib/necronomidoc necronomidoc
+#   sudo mkdir -p /var/lib/necronomidoc /etc/necronomidoc
+#   sudo chown necronomidoc: /var/lib/necronomidoc
+#   printf 'DOCS_TOKEN=%s\n' "$(openssl rand -hex 32)" | sudo tee /etc/necronomidoc/env >/dev/null
+#   sudo chmod 600 /etc/necronomidoc/env
+#   sudo cp deploy/necronomidoc.service /etc/systemd/system/
+#   sudo systemctl enable --now necronomidoc
+#
+# The app itself lives wherever you cloned + built it (WorkingDirectory below).
+
+[Unit]
+Description=necronomidoc — team documentation server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=necronomidoc
+WorkingDirectory=/opt/necronomidoc
+ExecStart=/usr/bin/node packages/cli/dist/index.js serve
+Restart=on-failure
+RestartSec=5
+
+# Secrets (DOCS_TOKEN, DOCS_WEBHOOK_SECRET, …) come from the env file, never
+# from the unit itself.
+EnvironmentFile=/etc/necronomidoc/env
+Environment=NODE_ENV=production
+Environment=DOCS_DATA_DIR=/var/lib/necronomidoc
+Environment=PORT=4319
+
+# Hardening: the process only needs to write its data dir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/necronomidoc
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

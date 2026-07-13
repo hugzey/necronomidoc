@@ -84,7 +84,7 @@ docs/
 | 3 | Enrichment at depth: LLM overlay writer, staleness workflow, subsystem overviews | [03-slice-3-enrichment.md](03-slice-3-enrichment.md) | ✅ Done |
 | 4 | OpenAPI adapter + interactive API reference pages | [04-slice-4-openapi.md](04-slice-4-openapi.md) | ✅ Done |
 | 5 | Backend language adapters (Python + C#) proving the adapter pattern; toolchain packaging, `doctor`, `POST /api/ir` | [05-slice-5-backend-language.md](05-slice-5-backend-language.md) | ✅ Done |
-| 6 | Deployment & ops hardening: Docker, EC2/Azure/on-prem guides, auth, backups | [06-slice-6-deployment-ops.md](06-slice-6-deployment-ops.md) | Planned |
+| 6 | Deployment & ops hardening: Docker, EC2/Azure/on-prem guides, auth, backups | [06-slice-6-deployment-ops.md](06-slice-6-deployment-ops.md) | ✅ Done |
 
 Each slice ends deployed and demoable. Slice order after 2 can be re-prioritized; 4/5 are independent of 3.
 

@@ -3,8 +3,11 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { Hono, type Context } from "hono";
 import { DocModel, slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
 import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
+import { installAuth } from "./auth.js";
 import { buildRepo, looksLikeGitUrl, publishModel } from "./build.js";
 import type { NecronomidocConfig } from "./config.js";
+import { ensureDataDirVersion } from "./datadir.js";
+import { createLogger, requestLogger } from "./logger.js";
 import { fetchSource } from "./ingest/fetch.js";
 import {
   authorizeRestTrigger,
@@ -102,6 +105,19 @@ function mtimeCached<T>(path: string, read: () => T): () => T {
  * one Hono app, one process, fs-only state (decisions 0002 + 0008).
  */
 export function createApp(config: NecronomidocConfig): App {
+  // Refuse a data dir written by a newer schema (explicit over silent).
+  ensureDataDirVersion(config.dataDir);
+
+  // Auth is all-or-nothing on the shared token; without one there is nothing
+  // to check against, so fail loudly rather than serve wide-open under a flag
+  // the operator believes is protecting them.
+  if (config.authRequired && !config.token) {
+    throw new Error(
+      "authRequired is set but no token is configured — set DOCS_TOKEN (or --token) to the shared access token.",
+    );
+  }
+
+  const log = createLogger({ format: config.logFormat });
   const store = new ManifestStore(config.dataDir);
   store.reload();
 
@@ -180,6 +196,21 @@ export function createApp(config: NecronomidocConfig): App {
 
   const app = new Hono();
 
+  // Structured request logging first so every request (including rejected
+  // ones) is recorded, with webhook deliveries tagged by provider.
+  app.use(requestLogger(log));
+
+  // Login/logout routes + the auth gate (no-op when authRequired is off).
+  // Registered before content routes so the gate wraps them.
+  installAuth(app, {
+    authRequired: config.authRequired,
+    token: config.token,
+    sessionSecret: config.sessionSecret,
+  });
+
+  // Liveness: dependency-free, always public, for uptime monitors and
+  // container/orchestrator health probes. `/health` kept as an alias.
+  app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.get("/api/status", (c) => {
