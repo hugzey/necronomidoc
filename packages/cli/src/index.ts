@@ -1,14 +1,21 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DocModel, exportJsonSchemas, slugify } from "@necronomidoc/docmodel";
 import {
   buildRepo,
+  checkDocStandard,
   cloneDirFor,
   enrichRepo,
+  exportArtefactTasks,
   exportEnrichTasks,
+  exportSkillTasks,
   exportState,
+  generateArtefact,
+  generateSkills,
+  importArtefactResults,
   importEnrichResults,
+  importSkillResults,
   KNOWN_PROVIDERS,
   LLM_PROVIDERS,
   listAdapters,
@@ -19,8 +26,11 @@ import {
   removeClone,
   removeSourceRepo,
   reviewStale,
+  scaffoldDocs,
   startServer,
   upsertSourceRepo,
+  writeSkillFolders,
+  type ScopeSelection,
 } from "@necronomidoc/server";
 
 interface Flags {
@@ -67,6 +77,16 @@ Usage:
                  [--subsystems] [--no-core-docs] [--review-stale]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
                  [--name <n>] [--ref <ref>] [--data-dir <dir>]
+  necronomidoc skills [<repo-slug> | --repos <a,b,c> | --all] [--out <dir>] [--force]
+                 [--dry-run] [--provider <p>] [--model <id>] [--base-url <url>]
+                 [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
+                 [--data-dir <dir>]
+  necronomidoc artefact <template.md|.docx> [<repo-slug> | --repos <a,b,c> | --all]
+                 [--out <file>] [--max-tokens <n>] [--dry-run]
+                 [--provider <p>] [--model <id>] [--base-url <url>]
+                 [--export-tasks <tasks.json>] [--data-dir <dir>]
+  necronomidoc artefact --import-results <results.json> --tasks <tasks.json> [--out <file>]
+  necronomidoc init-docs <repo-path> [--force]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
@@ -273,6 +293,198 @@ async function cmdEnrich(flags: Flags): Promise<number> {
   if (r.aborted) console.log("  ⚠ token budget reached — run again to continue where it stopped.");
   for (const failure of r.failures) console.warn(`  ✗ ${failure.path}: ${failure.error}`);
   return r.failures.length > 0 && r.overlaysWritten === 0 && !dryRun ? 1 : 0;
+}
+
+/** Shared scope flags: positional slug, `--repos a,b,c`, or `--all`. */
+function scopeFrom(flags: Flags, positionalIndex: number): ScopeSelection {
+  const positional = (flags._ as string[])[positionalIndex];
+  const reposFlag = str(flags, "repos");
+  if (flags["all"] === true) return { all: true };
+  if (reposFlag) {
+    return { repos: reposFlag.split(",").map((s) => s.trim()).filter(Boolean) };
+  }
+  return positional ? { repos: [positional] } : {};
+}
+
+async function cmdSkills(flags: Flags): Promise<number> {
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+
+  // Agent mode, step 2: validate + persist the agent's skill set.
+  const importResults = str(flags, "import-results");
+  if (importResults) {
+    const tasksFile = str(flags, "tasks");
+    if (!tasksFile) {
+      console.error("skills: --import-results needs --tasks <tasks.json> (written by --export-tasks).");
+      return 1;
+    }
+    const result = importSkillResults({
+      dataDir: config.dataDir,
+      resultsFile: importResults,
+      tasksFile,
+    });
+    for (const failure of result.failures) console.warn(`  ✗ ${failure.id}: ${failure.error}`);
+    if (result.skillsWritten === 0) {
+      console.error(`✗ no skills imported for set ${result.setId}`);
+      return 1;
+    }
+    console.log(`✓ imported ${result.skillsWritten} skills → data/skills/${result.setId}/`);
+    return 0;
+  }
+
+  const scope = scopeFrom(flags, 1);
+
+  // Agent mode, step 1: write the skill prompt to a task file (no API key).
+  const exportTasks = str(flags, "export-tasks");
+  if (exportTasks) {
+    const result = exportSkillTasks({ dataDir: config.dataDir, ...scope, outFile: exportTasks });
+    console.log(`✓ exported 1 skill-set task for ${result.repos.join(", ")} → ${result.outFile}`);
+    console.log("Next: have your coding agent complete the task file (instructions are inside), then:");
+    console.log(`  necronomidoc skills --import-results <results.json> --tasks ${exportTasks}`);
+    return 0;
+  }
+
+  const dryRun = flags["dry-run"] === true;
+  const result = await generateSkills({
+    dataDir: config.dataDir,
+    ...scope,
+    provider: str(flags, "provider"),
+    model: str(flags, "model"),
+    baseUrl: str(flags, "base-url"),
+    force: flags["force"] === true,
+    dryRun,
+  });
+
+  if (dryRun) {
+    console.log(`Dry run for skill set "${result.setId}" (${result.scope}, ${result.repos.length} repo(s)):`);
+    console.log(
+      result.cached
+        ? "  cached set is fresh — nothing to generate (use --force to regenerate)."
+        : `  would generate one skill set (changed repos: ${result.staleRepos.join(", ") || "first run"}).`,
+    );
+    return 0;
+  }
+  if (result.cached) {
+    console.log(`✓ skill set "${result.setId}" is fresh (hash cache) — use --force to regenerate.`);
+  } else {
+    console.log(`✓ generated ${result.skillsWritten} skills for "${result.setId}"`);
+    console.log(
+      `  ${result.calls} call — ${result.inputTokens} input + ${result.outputTokens} output tokens → data/skills/${result.setId}/`,
+    );
+  }
+  const out = str(flags, "out");
+  if (out) {
+    const copied = writeSkillFolders(config.dataDir, result.setId, out);
+    console.log(`  copied ${copied} SKILL.md folder(s) → ${resolve(out)}`);
+  }
+  return 0;
+}
+
+async function cmdArtefact(flags: Flags): Promise<number> {
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+  const out = str(flags, "out");
+
+  const copyOut = (outputPath: string): void => {
+    if (!out) return;
+    copyFileSync(outputPath, resolve(out));
+    console.log(`  copied output → ${resolve(out)}`);
+  };
+
+  // Agent mode, step 2: validate the agent's fills, assemble, persist.
+  const importResults = str(flags, "import-results");
+  if (importResults) {
+    const tasksFile = str(flags, "tasks");
+    if (!tasksFile) {
+      console.error("artefact: --import-results needs --tasks <tasks.json> (written by --export-tasks).");
+      return 1;
+    }
+    const result = await importArtefactResults({
+      dataDir: config.dataDir,
+      resultsFile: importResults,
+      tasksFile,
+    });
+    console.log(`✓ assembled "${result.record.name}" — ${result.applied} fills → ${result.outputPath}`);
+    if (result.missingTasks.length > 0) {
+      console.warn(`  ⚠ ${result.missingTasks.length} task(s) had no result: ${result.missingTasks.slice(0, 5).join(", ")}${result.missingTasks.length > 5 ? ", …" : ""}`);
+    }
+    for (const id of result.unmatchedResults) console.warn(`  ⚠ ignored result with unknown or duplicate id: ${id}`);
+    for (const failure of result.failures) console.warn(`  ✗ ${failure.id}: ${failure.error}`);
+    copyOut(result.outputPath);
+    return result.applied === 0 ? 1 : 0;
+  }
+
+  const template = (flags._ as string[])[1];
+  if (!template) {
+    console.error("artefact: missing <template.md|.docx>");
+    return 1;
+  }
+  const scope = scopeFrom(flags, 2);
+
+  // Agent mode, step 1: write every fill prompt to a task file (no API key).
+  const exportTasks = str(flags, "export-tasks");
+  if (exportTasks) {
+    const result = await exportArtefactTasks({
+      dataDir: config.dataDir,
+      ...scope,
+      templatePath: template,
+      outFile: exportTasks,
+    });
+    console.log(`✓ exported ${result.tasks} artefact task(s) [${result.mode} mode] → ${result.outFile}`);
+    console.log("Next: have your coding agent complete the task file (instructions are inside), then:");
+    console.log(`  necronomidoc artefact --import-results <results.json> --tasks ${exportTasks}`);
+    return 0;
+  }
+
+  const dryRun = flags["dry-run"] === true;
+  const result = await generateArtefact({
+    dataDir: config.dataDir,
+    ...scope,
+    templatePath: template,
+    provider: str(flags, "provider"),
+    model: str(flags, "model"),
+    baseUrl: str(flags, "base-url"),
+    maxTokens: int(flags, "max-tokens"),
+    dryRun,
+  });
+
+  if (dryRun) {
+    console.log(`Dry run for ${template}:`);
+    console.log(
+      result.mode === "placeholders"
+        ? `  ${result.tasks} placeholder(s) found — everything outside them is preserved.`
+        : `  no placeholders — sections mode (${result.tasks} planned section(s) estimated from headings).`,
+    );
+    if (result.markdownFallback) {
+      console.log("  ⚠ sections mode on a .docx template outputs markdown (see docs/artefacts.md).");
+    }
+    return 0;
+  }
+
+  console.log(`✓ generated "${result.record!.name}" [${result.mode} mode] — ${result.filled}/${result.tasks} filled`);
+  console.log(
+    `  ${result.calls} calls — ${result.inputTokens} input + ${result.outputTokens} output tokens → ${result.outputPath}`,
+  );
+  if (result.markdownFallback) {
+    console.log("  ⚠ .docx template had no placeholders — output written as markdown.");
+  }
+  if (result.aborted) console.log("  ⚠ token budget reached — some sections were not filled.");
+  for (const failure of result.failures) console.warn(`  ✗ ${failure.id}: ${failure.error}`);
+  copyOut(result.outputPath!);
+  return result.filled === 0 && result.tasks > 0 ? 1 : 0;
+}
+
+/** Scaffold the doc-standard templates into a repo (decision 0019). */
+function cmdInitDocs(flags: Flags): number {
+  const target = (flags._ as string[])[1];
+  if (!target) {
+    console.error("init-docs: missing <repo-path>");
+    return 1;
+  }
+  const result = scaffoldDocs(target, { force: flags["force"] === true });
+  console.log(`✓ scaffolded doc templates under ${result.dir}`);
+  for (const label of result.written) console.log(`  + ${label}`);
+  for (const label of result.skipped) console.log(`  = ${label} (exists — kept; --force overwrites)`);
+  console.log("Fill in the TODO(doc) markers, commit, and rebuild — repo docs beat every other source.");
+  return 0;
 }
 
 function cmdServe(flags: Flags): number {
@@ -492,6 +704,15 @@ async function cmdDoctor(flags: Flags): Promise<number> {
       needsLine = " — not fetched yet (build once to enable language detection)";
     }
     console.log(`  ${repo.id} [${repo.provider}] ${lastLine}${needsLine}`);
+
+    // Doc-standard compliance (decision 0019): advisory only — the heuristic
+    // floor keeps every repo documented, so nothing here affects exit codes.
+    if (existsSync(cloneDir)) {
+      const icons = { ok: "✓", info: "ℹ", warn: "⚠" } as const;
+      for (const finding of checkDocStandard(cloneDir)) {
+        console.log(`      ${icons[finding.level]} docs: ${finding.message}`);
+      }
+    }
   }
 
   if (affected > 0) {
@@ -523,6 +744,12 @@ async function main(): Promise<number> {
       return cmdBuild(flags);
     case "enrich":
       return cmdEnrich(flags);
+    case "skills":
+      return cmdSkills(flags);
+    case "artefact":
+      return cmdArtefact(flags);
+    case "init-docs":
+      return cmdInitDocs(flags);
     case "serve":
       return cmdServe(flags);
     case "repo":

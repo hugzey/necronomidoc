@@ -242,6 +242,53 @@ generates any [core docs](core-docs.md) the repo hasn't curated
 reviewed subsystem map, and `--review-stale` to list human overlays whose
 code has changed. Full guide: [enrichment.md](enrichment.md).
 
+## Generate agent skills from documented repos (slice 8)
+
+Turn published docs into portable [Agent Skills](skills.md) — `SKILL.md`
+folders an agent harness loads by description:
+
+```bash
+node packages/cli/dist/index.js skills --all --dry-run          # plan (no calls)
+node packages/cli/dist/index.js skills --all                    # one skill set for everything
+node packages/cli/dist/index.js skills widgets                  # one repo
+node packages/cli/dist/index.js skills --repos widgets,billing  # explicit set
+node packages/cli/dist/index.js skills --all --out ~/.claude/skills   # copy folders out
+```
+
+Sets are cached against repo content hashes (re-runs on unchanged docs make
+zero calls; `--force` regenerates), stored under `data/skills/`, downloadable
+as zips (`GET /api/skills/<id>/download`), and browsable on the site at
+`/skills`. Providers and the no-API-key agent mode work exactly like
+`enrich` (`--export-tasks` / `--import-results`). Full guide:
+[skills.md](skills.md).
+
+## Fill your own templates — artefacts (slice 8)
+
+Hand the server a markdown or Word template and it fills it from one, many,
+or all repos ([guide](artefacts.md)):
+
+```bash
+node packages/cli/dist/index.js artefact release-notes.md --all --dry-run
+node packages/cli/dist/index.js artefact release-notes.md --all --out filled.md
+node packages/cli/dist/index.js artefact audit.docx --repos widgets,billing
+```
+
+Mark fill-in points with `{{an instruction}}` or `<an instruction>` and
+everything outside the markers is preserved (docx keeps all styling); a
+template without markers is planned into sections from its headings. Results
+persist under `data/artefacts/` and on the site at `/artefacts`. Agent mode:
+`--export-tasks` / `--import-results`, same as everywhere else.
+
+## Adopt the documentation standard (slice 8)
+
+The [documentation standard](doc-standard.md) says what to write so docs
+serve humans and agents alike. Scaffold it into any repo:
+
+```bash
+node packages/cli/dist/index.js init-docs ../widgets   # never overwrites; --force does
+node packages/cli/dist/index.js doctor                 # advisory compliance findings
+```
+
 ## Add human enrichment overlays
 
 Drop YAML/JSON overlay files in the source repo under

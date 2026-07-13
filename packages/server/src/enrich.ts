@@ -16,7 +16,6 @@ import {
   EnrichmentTaskFile,
   LLM_CORE_DOCS_FILE,
   LLM_SUBSYSTEMS_FILE,
-  LlmConfigError,
   applyEnrichmentResults,
   buildEnrichmentTaskFile,
   generateCoreDocs,
@@ -26,7 +25,6 @@ import {
   planCoreDocs,
   proposeSubsystems,
   renderStaleReview,
-  resolveLlmClient,
   runLlmEnrichment,
   type EnrichmentRunReport,
   type LlmClient,
@@ -39,6 +37,8 @@ import {
   type MaterializedTarget,
 } from "./build.js";
 import { fetchSource } from "./ingest/fetch.js";
+import { llmClientFor } from "./llm.js";
+import { readJsonFile } from "./scope.js";
 import { getSourceRepo } from "./ingest/registry.js";
 
 /**
@@ -75,31 +75,12 @@ export interface EnrichOptions {
 }
 
 /**
- * Resolve the run's LLM client from flags + environment (decision 0016).
- * Dry runs plan without calling the model, so a missing provider config must
- * not block them — they get a stub that only fails if something does call it.
+ * Resolve the run's LLM client from flags + environment (decision 0016) —
+ * the shared `llmClientFor` policy: dry runs get a throwing stub instead of
+ * failing on missing credentials.
  */
 function clientForRun(options: EnrichOptions): LlmClient {
-  try {
-    return resolveLlmClient({
-      provider: options.provider,
-      model: options.model,
-      baseUrl: options.baseUrl,
-    });
-  } catch (err) {
-    // Missing credentials must not block a dry run (it never calls the
-    // model), but explicitly invalid input — a typo'd provider name — always
-    // surfaces, or the user only learns about it on the real run.
-    if (options.dryRun && err instanceof LlmConfigError && err.kind !== "invalid") {
-      return {
-        model: options.model ?? "(unconfigured)",
-        complete: async () => {
-          throw err;
-        },
-      };
-    }
-    throw err;
-  }
+  return llmClientFor(options, options.dryRun);
 }
 
 /** Prompt-source reader over a working tree — one definition so the live and
@@ -389,15 +370,6 @@ export interface ImportResultsResult {
   unmatchedResults: string[];
   missingTasks: string[];
   published: boolean;
-}
-
-function readJsonFile(path: string, what: string): unknown {
-  const absolute = resolve(path);
-  try {
-    return JSON.parse(readFileSync(absolute, "utf8"));
-  } catch (err) {
-    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
-  }
 }
 
 /**

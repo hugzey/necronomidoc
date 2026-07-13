@@ -2,7 +2,18 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, HashRouter, Route, Routes } from "react-router-dom";
 import { injectedData } from "./api.js";
-import { CoreDocView, FileView, Home, Layout, RepoView, StatusView, SubsystemsView } from "./pages.js";
+import {
+  ArtefactsView,
+  CoreDocView,
+  FileView,
+  Home,
+  Layout,
+  RepoView,
+  SkillSetView,
+  SkillsView,
+  StatusView,
+  SubsystemsView,
+} from "./pages.js";
 import "./styles.css";
 
 // Static single-file exports can't rely on server-side SPA fallback, so they
@@ -16,6 +27,9 @@ createRoot(document.getElementById("root")!).render(
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
           <Route path="/status" element={<StatusView />} />
+          <Route path="/skills" element={<SkillsView />} />
+          <Route path="/skills/:id" element={<SkillSetView />} />
+          <Route path="/artefacts" element={<ArtefactsView />} />
           <Route path="/r/:slug" element={<RepoView />} />
           <Route path="/r/:slug/docs" element={<CoreDocView />} />
           <Route path="/r/:slug/docs/:kind" element={<CoreDocView />} />

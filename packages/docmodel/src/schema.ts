@@ -308,6 +308,114 @@ export const EnrichmentReport = z.object({
 });
 export type EnrichmentReport = z.infer<typeof EnrichmentReport>;
 
+// ---- Skills & artefacts (slice 8) ----
+
+/** How many documented repos a generated skill set or artefact drew from. */
+export const GenerationScope = z.enum(["repo", "multi", "global"]);
+export type GenerationScope = z.infer<typeof GenerationScope>;
+
+/**
+ * One generated agent skill in the Agent Skills convention: `name` and
+ * `description` become the SKILL.md YAML frontmatter, `body` its markdown
+ * instructions. Portable to Claude Code and other harnesses that load
+ * SKILL.md folders.
+ */
+export const SkillDefinition = z.object({
+  /** Stable slug id, unique within its set; also the SKILL.md folder name. */
+  id: z.string(),
+  name: z.string(),
+  /** When to use the skill — the frontmatter description agents match on. */
+  description: z.string(),
+  /** SKILL.md markdown body (instructions, references, examples). */
+  body: z.string(),
+  /** Repo slugs whose docs this skill draws on. */
+  repos: z.array(z.string()).default([]),
+});
+export type SkillDefinition = z.infer<typeof SkillDefinition>;
+
+/** A generated set of skills for one scope (one, many, or all repos). */
+export const SkillSet = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  /** Stable id derived from the scope (e.g. `global` or joined repo slugs). */
+  id: z.string(),
+  scope: GenerationScope,
+  /** Repo slugs in scope at generation time. */
+  repos: z.array(z.string()),
+  /** slug → `repoContentHash` at generation time (staleness/caching). */
+  sourceHashes: z.record(z.string()),
+  model: z.string().optional(),
+  generatedAt: z.string().optional(),
+  skills: z.array(SkillDefinition).default([]),
+});
+export type SkillSet = z.infer<typeof SkillSet>;
+
+/** One row in the skill-set index (`data/skills/index.json`). */
+export const SkillSetIndexEntry = z.object({
+  id: z.string(),
+  scope: GenerationScope,
+  repos: z.array(z.string()),
+  skillCount: z.number().int().nonnegative(),
+  model: z.string().optional(),
+  generatedAt: z.string().optional(),
+});
+export type SkillSetIndexEntry = z.infer<typeof SkillSetIndexEntry>;
+
+/** The top-level index of generated skill sets. */
+export const SkillSetIndex = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  sets: z.array(SkillSetIndexEntry).default([]),
+});
+export type SkillSetIndex = z.infer<typeof SkillSetIndex>;
+
+/** Template/output format of a generated artefact. */
+export const ArtefactFormat = z.enum(["markdown", "docx"]);
+export type ArtefactFormat = z.infer<typeof ArtefactFormat>;
+
+/**
+ * How the template was filled: `placeholders` (explicit `{{…}}` / `<…>`
+ * markers replaced, everything outside preserved) or `sections` (no markers —
+ * the LLM planned sections from the headings/best guess and wrote each).
+ */
+export const ArtefactMode = z.enum(["placeholders", "sections"]);
+export type ArtefactMode = z.infer<typeof ArtefactMode>;
+
+/** Metadata for one generated artefact (`data/artefacts/<id>/artefact.json`). */
+export const ArtefactRecord = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  id: z.string(),
+  /** Original template filename. */
+  name: z.string(),
+  format: ArtefactFormat,
+  mode: ArtefactMode,
+  scope: GenerationScope,
+  repos: z.array(z.string()),
+  /** Filename of the stored template copy, relative to the artefact dir. */
+  templateFile: z.string(),
+  /** Filename of the filled output, relative to the artefact dir. */
+  outputFile: z.string(),
+  /** Placeholders replaced (placeholders mode) or sections written. */
+  sectionsFilled: z.number().int().nonnegative(),
+  model: z.string().optional(),
+  generatedAt: z.string().optional(),
+  failures: z.array(z.object({ id: z.string(), error: z.string() })).default([]),
+});
+export type ArtefactRecord = z.infer<typeof ArtefactRecord>;
+
+/** One row in the artefact index (`data/artefacts/index.json`). */
+export const ArtefactIndexEntry = ArtefactRecord.omit({
+  schemaVersion: true,
+  templateFile: true,
+  failures: true,
+});
+export type ArtefactIndexEntry = z.infer<typeof ArtefactIndexEntry>;
+
+/** The top-level index of generated artefacts. */
+export const ArtefactIndex = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  artefacts: z.array(ArtefactIndexEntry).default([]),
+});
+export type ArtefactIndex = z.infer<typeof ArtefactIndex>;
+
 // ---- Manifests consumed by the site + MCP ----
 
 /** One repo's summary line in the registry. */

@@ -1,24 +1,36 @@
 import type {
+  ArtefactIndex,
+  ArtefactMode,
+  ArtefactRecord,
   CoreDoc,
   CoreDocKind,
   CoreDocsManifest,
   DocFile,
   DocModel,
   DocSymbolShape,
+  GenerationScope,
   IngestStatusResponse,
   Registry,
+  SkillSet,
+  SkillSetIndex,
   Subsystem,
   SubsystemsManifest,
 } from "@necronomidoc/docmodel";
 
 export type {
+  ArtefactIndex,
+  ArtefactMode,
+  ArtefactRecord,
   CoreDoc,
   CoreDocKind,
   CoreDocsManifest,
   DocFile,
   DocModel,
   DocSymbolShape,
+  GenerationScope,
   Registry,
+  SkillSet,
+  SkillSetIndex,
   Subsystem,
   SubsystemsManifest,
 };
@@ -99,6 +111,103 @@ export async function fetchStatus(): Promise<StatusResponse | undefined> {
   const res = await fetch("/api/status");
   if (!res.ok) throw new Error(`${res.status} fetching /api/status`);
   return (await res.json()) as StatusResponse;
+}
+
+// ---- Skills & artefacts (slice 8) ----
+
+/**
+ * Generated skill sets live on the server — unavailable in static-export mode,
+ * which returns undefined so the page can degrade gracefully. Never cached:
+ * the index changes after each generation.
+ */
+export async function fetchSkillSets(): Promise<SkillSetIndex | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch("/api/skills");
+  if (!res.ok) throw new Error(`${res.status} fetching /api/skills`);
+  return (await res.json()) as SkillSetIndex;
+}
+
+export async function fetchSkillSet(id: string): Promise<SkillSet> {
+  const res = await fetch(`/api/skills/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`${res.status} fetching skill set ${id}`);
+  return (await res.json()) as SkillSet;
+}
+
+/** Generated artefacts — same server-only, uncached contract as skill sets. */
+export async function fetchArtefacts(): Promise<ArtefactIndex | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch("/api/artefacts");
+  if (!res.ok) throw new Error(`${res.status} fetching /api/artefacts`);
+  return (await res.json()) as ArtefactIndex;
+}
+
+export async function fetchArtefact(id: string): Promise<ArtefactRecord> {
+  const res = await fetch(`/api/artefacts/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`${res.status} fetching artefact ${id}`);
+  return (await res.json()) as ArtefactRecord;
+}
+
+// Generation result shapes mirror the server's SkillsResult/ArtefactResult by
+// hand — the site doesn't depend on the server package.
+export interface SkillsGenerateResult {
+  setId: string;
+  scope: GenerationScope;
+  repos: string[];
+  cached: boolean;
+  staleRepos: string[];
+  skillsWritten: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface ArtefactGenerateResult {
+  record: ArtefactRecord;
+  outputPath: string;
+  mode: ArtefactMode;
+  tasks: number;
+  filled: number;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  failures: { id: string; error: string }[];
+  aborted: boolean;
+  markdownFallback: boolean;
+}
+
+/** POST and surface the server's `{ error }` payload as the thrown message. */
+async function postForResult<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    data = undefined;
+  }
+  if (!res.ok) {
+    const message = (data as { error?: string } | undefined)?.error;
+    throw new Error(message ?? `${res.status} posting ${url}`);
+  }
+  return data as T;
+}
+
+export function generateSkills(
+  body: { repos?: string[]; all?: boolean; force?: boolean },
+  token: string,
+): Promise<SkillsGenerateResult> {
+  return postForResult("/api/skills/generate", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function generateArtefact(form: FormData, token: string): Promise<ArtefactGenerateResult> {
+  return postForResult("/api/artefacts/generate", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  });
 }
 
 /** Flatten a file's symbols (including members) for rendering. */

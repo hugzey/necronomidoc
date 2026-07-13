@@ -1,16 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, Outlet, useLocation, useMatch, useParams } from "react-router-dom";
 import {
+  fetchArtefacts,
   fetchCoreDocs,
   fetchModel,
   fetchRegistry,
+  fetchSkillSet,
+  fetchSkillSets,
   fetchStatus,
   fetchSubsystems,
   flattenSymbols,
+  generateArtefact,
+  generateSkills,
+  type ArtefactGenerateResult,
+  type ArtefactIndex,
   type CoreDocsManifest,
   type DocModel,
   type DocSymbolShape,
   type Registry,
+  type SkillSet,
+  type SkillSetIndex,
+  type SkillsGenerateResult,
   type StatusResponse,
   type Subsystem,
   type SubsystemsManifest,
@@ -20,6 +30,7 @@ import {
   DocText,
   KindBadge,
   ProvenanceBadge,
+  ScopeBadge,
   ScrollToAnchor,
   Sidebar,
 } from "./components.js";
@@ -254,6 +265,477 @@ export function StatusView() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ---- Skills & artefacts (slice 8): generated skill sets + filled templates ----
+
+const TOKEN_KEY = "necronomidoc-token";
+
+// sessionStorage (never localStorage) so the admin token dies with the tab.
+function useServerToken(): [string, (t: string) => void] {
+  const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_KEY) ?? "");
+  return [
+    token,
+    (t: string) => {
+      setToken(t);
+      sessionStorage.setItem(TOKEN_KEY, t);
+    },
+  ];
+}
+
+function ScopePicker({
+  registry,
+  all,
+  setAll,
+  selected,
+  setSelected,
+}: {
+  registry?: Registry;
+  all: boolean;
+  setAll: (all: boolean) => void;
+  selected: string[];
+  setSelected: (repos: string[]) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-sm font-medium">Scope</div>
+      <div className="flex flex-wrap gap-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input type="radio" className="radio radio-sm" checked={all} onChange={() => setAll(true)} />
+          All repos
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input type="radio" className="radio radio-sm" checked={!all} onChange={() => setAll(false)} />
+          Selected repos
+        </label>
+      </div>
+      {!all && (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+          {registry?.repos.map((r) => (
+            <label key={r.slug} className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={selected.includes(r.slug)}
+                onChange={(e) =>
+                  setSelected(
+                    e.target.checked ? [...selected, r.slug] : selected.filter((s) => s !== r.slug),
+                  )
+                }
+              />
+              <span className="font-mono">{r.slug}</span>
+            </label>
+          ))}
+          {(registry?.repos.length ?? 0) === 0 && (
+            <p className="text-sm text-base-content/60">No repos in the registry yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TokenInput({ token, setToken }: { token: string; setToken: (t: string) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      Server token
+      <input
+        type="password"
+        className="input input-sm max-w-xs grow"
+        placeholder="Bearer token"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        autoComplete="off"
+      />
+    </label>
+  );
+}
+
+function GenerateSkillsForm({ registry, onDone }: { registry?: Registry; onDone: () => void }) {
+  const [all, setAll] = useState(true);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [force, setForce] = useState(false);
+  const [token, setToken] = useServerToken();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
+  const [result, setResult] = useState<SkillsGenerateResult>();
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setPending(true);
+    setError(undefined);
+    setResult(undefined);
+    try {
+      const res = await generateSkills(all ? { all: true, force } : { repos: selected, force }, token);
+      setResult(res);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="card card-border bg-base-100">
+      <div className="card-body gap-3 p-5">
+        <ScopePicker registry={registry} all={all} setAll={setAll} selected={selected} setSelected={setSelected} />
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-sm"
+            checked={force}
+            onChange={(e) => setForce(e.target.checked)}
+          />
+          Force regenerate even when the cached set is fresh
+        </label>
+        <TokenInput token={token} setToken={setToken} />
+        <p className="text-xs text-base-content/60">
+          Needs the server's admin bearer token. Generation calls the LLM and can take a minute or more.
+        </p>
+        <div>
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm"
+            disabled={pending || !token || (!all && selected.length === 0)}
+          >
+            {pending && <span className="loading loading-spinner loading-xs" />}
+            {pending ? "Generating…" : "Generate skills"}
+          </button>
+        </div>
+        {error && (
+          <div className="alert alert-error">
+            <span>{error}</span>
+          </div>
+        )}
+        {result && (
+          <div className="alert alert-success">
+            <span>
+              {result.cached ? (
+                <>
+                  Cached set <code>{result.setId}</code> is still fresh — nothing regenerated.
+                </>
+              ) : (
+                <>
+                  Wrote {result.skillsWritten} skills to <code>{result.setId}</code> ({result.calls}{" "}
+                  calls, {result.inputTokens + result.outputTokens} tokens).
+                </>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export function SkillsView() {
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading } = useAsync<SkillSetIndex | undefined>(fetchSkillSets, [refresh]);
+  const { data: registry } = useAsync<Registry>(fetchRegistry, []);
+
+  if (loading && !data) return <Loading />;
+  if (error && !data) return <div className="alert alert-error">Failed to load skill sets: {error}</div>;
+  if (!data) {
+    return (
+      <div className="alert alert-info">
+        <span>Skills need a running server — they aren't available in a static export.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-bold">Skills</h1>
+      <p className="mb-6 text-base-content/60">
+        Generated agent skill sets (SKILL.md folders) drawn from the documented repos.
+      </p>
+      {data.sets.length === 0 ? (
+        <div className="alert alert-warning">
+          <span>No skill sets yet — generate one below.</span>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Set</th>
+                <th>Scope</th>
+                <th>Repos</th>
+                <th>Skills</th>
+                <th>Generated</th>
+                <th>Model</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.sets.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <Link to={`/skills/${s.id}`} className="link-hover link font-mono text-sm">
+                      {s.id}
+                    </Link>
+                  </td>
+                  <td>
+                    <ScopeBadge scope={s.scope} />
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      {s.repos.map((r) => (
+                        <span key={r} className="badge badge-ghost badge-sm font-mono">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>{s.skillCount}</td>
+                  <td className="whitespace-nowrap text-sm">
+                    {s.generatedAt ? new Date(s.generatedAt).toLocaleString() : "—"}
+                  </td>
+                  <td className="text-sm">{s.model ?? "—"}</td>
+                  <td>
+                    <a href={`/api/skills/${s.id}/download`} className="link-hover link text-sm">
+                      zip
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Generate</h2>
+      <GenerateSkillsForm registry={registry} onDone={() => setRefresh((n) => n + 1)} />
+    </div>
+  );
+}
+
+export function SkillSetView() {
+  const { id = "" } = useParams();
+  const { data: set, error, loading } = useAsync<SkillSet>(() => fetchSkillSet(id), [id]);
+
+  if (loading) return <Loading />;
+  if (error || !set) return <div className="alert alert-error">Failed to load skill set: {error}</div>;
+
+  return (
+    <div>
+      <div className="breadcrumbs text-sm">
+        <ul>
+          <li>
+            <Link to="/skills">Skills</Link>
+          </li>
+          <li className="font-medium">{set.id}</li>
+        </ul>
+      </div>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <h1 className="text-2xl font-bold">{set.id}</h1>
+        <ScopeBadge scope={set.scope} />
+        {set.repos.map((r) => (
+          <span key={r} className="badge badge-ghost badge-sm font-mono">
+            {r}
+          </span>
+        ))}
+        <a href={`/api/skills/${set.id}/download`} className="btn btn-outline btn-sm ml-auto">
+          Download zip
+        </a>
+      </div>
+      <p className="mb-6 text-sm text-base-content/60">
+        {set.skills.length} skill{set.skills.length === 1 ? "" : "s"}
+        {set.generatedAt && <> · generated {new Date(set.generatedAt).toLocaleString()}</>}
+        {set.model && <> · {set.model}</>}
+      </p>
+      {set.skills.map((skill) => (
+        <div key={skill.id} className="card card-border mb-4 bg-base-100 scroll-mt-4" id={skill.id}>
+          <div className="card-body gap-2 p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={`#${skill.id}`} className="text-lg font-semibold hover:underline">
+                {skill.name}
+              </a>
+              <span className="badge badge-ghost badge-sm font-mono">{skill.id}</span>
+            </div>
+            <p className="text-sm text-base-content/70">{skill.description}</p>
+            <div className="collapse-arrow collapse bg-base-200">
+              <input type="checkbox" aria-label="Toggle skill body" />
+              <div className="collapse-title text-sm font-medium">SKILL.md</div>
+              <div className="collapse-content">
+                <MarkdownDoc content={skill.body} slug="" path={`${skill.id}/SKILL.md`} files={[]} />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GenerateArtefactForm({ registry, onDone }: { registry?: Registry; onDone: () => void }) {
+  const [file, setFile] = useState<File>();
+  const [all, setAll] = useState(true);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [token, setToken] = useServerToken();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
+  const [result, setResult] = useState<ArtefactGenerateResult>();
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+    setPending(true);
+    setError(undefined);
+    setResult(undefined);
+    try {
+      const form = new FormData();
+      form.set("template", file);
+      form.set("repos", all ? "all" : selected.join(","));
+      const res = await generateArtefact(form, token);
+      setResult(res);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="card card-border bg-base-100">
+      <div className="card-body gap-3 p-5">
+        <label className="flex items-center gap-2 text-sm">
+          Template
+          <input
+            type="file"
+            className="file-input file-input-sm"
+            accept=".md,.markdown,.txt,.docx"
+            onChange={(e) => setFile(e.target.files?.[0])}
+          />
+        </label>
+        <p className="text-xs text-base-content/60">
+          Templates may mark fill-in points with <code>{"{{instruction}}"}</code> or{" "}
+          <code>{"<instruction>"}</code>; templates without markers are planned into sections from
+          their headings. Sections-mode .docx templates produce markdown output.
+        </p>
+        <ScopePicker registry={registry} all={all} setAll={setAll} selected={selected} setSelected={setSelected} />
+        <TokenInput token={token} setToken={setToken} />
+        <p className="text-xs text-base-content/60">
+          Needs the server's admin bearer token. Generation calls the LLM and can take a minute or more.
+        </p>
+        <div>
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm"
+            disabled={pending || !file || !token || (!all && selected.length === 0)}
+          >
+            {pending && <span className="loading loading-spinner loading-xs" />}
+            {pending ? "Generating…" : "Generate artefact"}
+          </button>
+        </div>
+        {error && (
+          <div className="alert alert-error">
+            <span>{error}</span>
+          </div>
+        )}
+        {result && (
+          <div className={`alert ${result.failures.length > 0 || result.aborted ? "alert-warning" : "alert-success"}`}>
+            <span>
+              Filled {result.filled}/{result.tasks}{" "}
+              {result.mode === "placeholders" ? "placeholders" : "sections"} ({result.calls} calls,{" "}
+              {result.inputTokens + result.outputTokens} tokens).
+              {result.markdownFallback && " Output fell back to markdown."}
+              {result.aborted && " Generation stopped early at the token budget."}
+              {result.failures.length > 0 && ` ${result.failures.length} failed.`}{" "}
+              <a href={`/api/artefacts/${result.record.id}/output`} className="link">
+                Download output
+              </a>
+            </span>
+          </div>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export function ArtefactsView() {
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading } = useAsync<ArtefactIndex | undefined>(fetchArtefacts, [refresh]);
+  const { data: registry } = useAsync<Registry>(fetchRegistry, []);
+
+  if (loading && !data) return <Loading />;
+  if (error && !data) return <div className="alert alert-error">Failed to load artefacts: {error}</div>;
+  if (!data) {
+    return (
+      <div className="alert alert-info">
+        <span>Artefacts need a running server — they aren't available in a static export.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1 className="mb-1 text-2xl font-bold">Artefacts</h1>
+      <p className="mb-6 text-base-content/60">
+        Documents generated by filling an uploaded template from the documented repos.
+      </p>
+      {data.artefacts.length === 0 ? (
+        <div className="alert alert-warning">
+          <span>No artefacts yet — upload a template below.</span>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Mode</th>
+                <th>Format</th>
+                <th>Repos</th>
+                <th>Filled</th>
+                <th>Generated</th>
+                <th>Download</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.artefacts.map((a) => (
+                <tr key={a.id}>
+                  <td className="text-sm font-medium">{a.name}</td>
+                  <td>
+                    <span className="badge badge-sm badge-info badge-outline">{a.mode}</span>
+                  </td>
+                  <td>
+                    <span className="badge badge-ghost badge-sm">{a.format}</span>
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      <ScopeBadge scope={a.scope} />
+                      {a.repos.map((r) => (
+                        <span key={r} className="badge badge-ghost badge-sm font-mono">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td>{a.sectionsFilled}</td>
+                  <td className="whitespace-nowrap text-sm">
+                    {a.generatedAt ? new Date(a.generatedAt).toLocaleString() : "—"}
+                  </td>
+                  <td className="whitespace-nowrap text-sm">
+                    <a href={`/api/artefacts/${a.id}/output`} className="link-hover link">
+                      output
+                    </a>{" "}
+                    ·{" "}
+                    <a href={`/api/artefacts/${a.id}/template`} className="link-hover link">
+                      template
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Generate</h2>
+      <GenerateArtefactForm registry={registry} onDone={() => setRefresh((n) => n + 1)} />
     </div>
   );
 }

@@ -1,4 +1,7 @@
+export * from "./artefacts.js";
 export * from "./coredocs.js";
+export * from "./docx.js";
+export * from "./skills.js";
 export * from "./heuristic.js";
 export * from "./overlays.js";
 export * from "./merge.js";

@@ -20,6 +20,9 @@ Architectural and directional decisions for the documentation server project. On
 | [0014](0014-auth-baseline.md) | Access control baseline: opt-in shared-token auth — session cookies for browsers, bearer for MCP/API; reverse-proxy SSO as the supported alternative | Accepted |
 | [0015](0015-core-docs.md) | Core docs: four per-repo documents (overview, conventions, packages, architecture) with repo > override > llm > heuristic precedence | Accepted |
 | [0016](0016-llm-provider-agnostic.md) | Provider-agnostic enrichment: Anthropic / OpenAI-compatible / Bedrock clients + no-API-key agent task export/import | Accepted |
+| [0017](0017-skill-generation.md) | Skill generation: LLM-written Agent Skills (SKILL.md) from one/many/all documented repos, hash-cached | Accepted |
+| [0018](0018-artefact-generation.md) | Artefact generation: LLM-filled .md/.docx templates — placeholder mode preserves everything outside markers | Accepted |
+| [0019](0019-doc-standard.md) | Documentation standard: one written standard + `init-docs` scaffold + advisory doctor checks | Accepted |
 
 ## Statuses
 

@@ -40,6 +40,17 @@ export function ProvenanceBadge({ provenance, stale }: { provenance?: string; st
   );
 }
 
+const SCOPE_BADGE: Record<string, string> = {
+  repo: "badge-ghost",
+  multi: "badge-info badge-outline",
+  global: "badge-primary badge-outline",
+};
+
+/** How many repos a generated skill set / artefact drew from (slice 8). */
+export function ScopeBadge({ scope }: { scope: string }) {
+  return <span className={`badge badge-sm ${SCOPE_BADGE[scope] ?? "badge-ghost"}`}>{scope}</span>;
+}
+
 // ---- Linkified text ----
 
 const IDENT = /([A-Za-z_$][A-Za-z0-9_$]*)/;
@@ -321,7 +332,13 @@ export function Sidebar({
       ) : (
         <p className="text-sm text-base-content/60">Pick a repo to browse its files.</p>
       )}
-      <div className="mt-auto border-t border-base-300 pt-3">
+      <div className="mt-auto flex flex-col gap-1 border-t border-base-300 pt-3">
+        <Link to="/skills" className="link-hover link text-sm text-base-content/60">
+          Skills
+        </Link>
+        <Link to="/artefacts" className="link-hover link text-sm text-base-content/60">
+          Artefacts
+        </Link>
         <Link to="/status" className="link-hover link text-sm text-base-content/60">
           Build status
         </Link>
