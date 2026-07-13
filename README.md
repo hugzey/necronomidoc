@@ -85,7 +85,9 @@ node packages/cli/dist/index.js serve --port 4319
 node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
   --id widgets --provider github --secret-env WIDGETS_HOOK_SECRET
 
-# fill documentation gaps with LLM summaries (slice 3)
+# fill documentation gaps with LLM summaries (slice 3) — any provider:
+# Anthropic / OpenAI / OpenRouter / Azure AI / Ollama / AWS Bedrock, or no
+# API key at all via a local coding agent (see docs/enrichment.md)
 ANTHROPIC_API_KEY=sk-ant-… node packages/cli/dist/index.js enrich widgets
 ```
 

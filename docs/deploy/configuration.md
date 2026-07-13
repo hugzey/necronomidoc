@@ -15,8 +15,11 @@ Configuration is resolved in precedence order: **defaults → `necronomidoc.conf
 | `DOCS_BUILD_CONCURRENCY` | `buildConcurrency` | `1` | Max concurrent builds. |
 | `DOCS_BUILD_TIMEOUT_MS` | `buildTimeoutMs` | `600000` | Per-build timeout. |
 | `DOCS_LOG_FORMAT` | `logFormat` | `json` | `json` emits one structured line per event (for `docker logs`, journald, log shippers); `text` is human-readable for local dev. |
-| `ANTHROPIC_API_KEY` | — | *(empty)* | Enables `necronomidoc enrich` (LLM summaries, slice 3). |
-| `NECRONOMIDOC_ENRICH_MODEL` | — | *(see enrichment docs)* | Overrides the enrichment model. |
+| `NECRONOMIDOC_LLM_PROVIDER` | — | *(auto-detect)* | LLM provider for `enrich`: `anthropic`, `openai`, `openrouter`, `azure`, `ollama`, or `bedrock`. Unset = auto-detect from which key below is present (ambiguity is an error, Bedrock is never auto-detected). See the [enrichment guide](../enrichment.md#choosing-a-provider). |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `AZURE_OPENAI_API_KEY` | — | *(empty)* | Provider credential for `enrich`. Bedrock uses the standard AWS credential chain (`AWS_REGION`, profiles, IAM roles) instead. No key at all? Use `enrich --export-tasks` + a local coding agent + `--import-results`. |
+| `NECRONOMIDOC_LLM_MODEL` | — | *(provider default)* | Enrichment model id (alias: the older `NECRONOMIDOC_ENRICH_MODEL`). Required for every provider except Anthropic (`claude-opus-4-8`). |
+| `NECRONOMIDOC_LLM_BASE_URL` | — | *(provider default)* | Endpoint root for OpenAI-compatible providers (required for `azure`, useful for vLLM/LM Studio/LiteLLM/…). |
+| `NECRONOMIDOC_LLM_API_KEY` | — | *(empty)* | Generic key override that beats the provider-specific variables above. |
 
 Per-repo webhook/token env vars (`--secret-env`, `--token-env`, `--api-token-env` on `repo add`) name **which environment variable** holds that repo's secret — the secret itself always comes from the environment, never from files in the data dir (see [ops guide](../ops-ingestion.md)).
 

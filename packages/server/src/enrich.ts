@@ -9,12 +9,16 @@ import {
   type LlmCoreDoc,
 } from "@necronomidoc/docmodel";
 import {
-  AnthropicLlmClient,
   CORE_DOCS_SUBDIR,
   CORE_DOC_KINDS,
   DEFAULT_MAX_TOKENS,
+  EnrichmentResultsFile,
+  EnrichmentTaskFile,
   LLM_CORE_DOCS_FILE,
   LLM_SUBSYSTEMS_FILE,
+  LlmConfigError,
+  applyEnrichmentResults,
+  buildEnrichmentTaskFile,
   generateCoreDocs,
   loadLlmCoreDocs,
   loadOverlays,
@@ -22,6 +26,7 @@ import {
   planCoreDocs,
   proposeSubsystems,
   renderStaleReview,
+  resolveLlmClient,
   runLlmEnrichment,
   type EnrichmentRunReport,
   type LlmClient,
@@ -48,7 +53,11 @@ export interface EnrichOptions {
   target: string;
   name?: string;
   ref?: string;
+  /** Provider id (anthropic | openai | openrouter | azure | ollama | bedrock); default auto-detect from env. */
+  provider?: string;
   model?: string;
+  /** Endpoint root for OpenAI-compatible providers. */
+  baseUrl?: string;
   maxFiles?: number;
   maxTokens?: number;
   /** Report what would be summarized without calling the LLM or publishing. */
@@ -61,8 +70,33 @@ export interface EnrichOptions {
    * against the repo hash. Default true; `--no-core-docs` disables.
    */
   coreDocs?: boolean;
-  /** Injected client (tests); defaults to the Anthropic API. */
+  /** Injected client (tests); defaults to `resolveLlmClient` over flags + env. */
   client?: LlmClient;
+}
+
+/**
+ * Resolve the run's LLM client from flags + environment (decision 0016).
+ * Dry runs plan without calling the model, so a missing provider config must
+ * not block them — they get a stub that only fails if something does call it.
+ */
+function clientForRun(options: EnrichOptions): LlmClient {
+  try {
+    return resolveLlmClient({
+      provider: options.provider,
+      model: options.model,
+      baseUrl: options.baseUrl,
+    });
+  } catch (err) {
+    if (options.dryRun && err instanceof LlmConfigError) {
+      return {
+        model: options.model ?? "(unconfigured)",
+        complete: async () => {
+          throw err;
+        },
+      };
+    }
+    throw err;
+  }
 }
 
 /** What the core-docs step of an enrich run did (or would do, on dry runs). */
@@ -138,6 +172,9 @@ function persistLlmOverlays(
 
 export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> {
   const dataDir = resolve(options.dataDir);
+  // Resolve the client first: a config problem should fail fast with a clear
+  // message, not after an expensive clone + extraction.
+  const client = options.client ?? clientForRun(options);
   const { repoDir, repoUrl, cleanup, name } = await materializeEnrichTarget(options);
 
   try {
@@ -147,8 +184,6 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
     const enrichmentDir = join(dataDir, "enrichment", slug);
     const overlays = loadOverlays(overlayDirsFor(dataDir, repoDir, slug));
 
-    const client =
-      options.client ?? new AnthropicLlmClient({ model: options.model });
     const { overlays: newOverlays, report } = await runLlmEnrichment(model, {
       client,
       overlays,
@@ -228,6 +263,203 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
     }
 
     return { slug, report, subsystemsProposed, coreDocs, published };
+  } finally {
+    cleanup?.();
+  }
+}
+
+// Re-exported so the CLI can classify config errors and list providers
+// without depending on the enrichment package directly.
+export { LLM_PROVIDERS, LlmConfigError } from "@necronomidoc/enrichment";
+
+export interface ExportTasksOptions {
+  dataDir: string;
+  target: string;
+  name?: string;
+  ref?: string;
+  maxFiles?: number;
+  subsystems?: boolean;
+  /** Include core-doc tasks (mirrors the live run's default-on behavior). */
+  coreDocs?: boolean;
+  /** Where to write the task file. */
+  outFile: string;
+}
+
+export interface ExportTasksResult {
+  slug: string;
+  outFile: string;
+  fileTasks: number;
+  coreDocTasks: CoreDocKind[];
+  subsystemsTask: boolean;
+  skippedHuman: number;
+  skippedFresh: number;
+  filesOverCap: number;
+}
+
+/**
+ * Agent-mode step 1 (`enrich --export-tasks`, decision 0016): plan exactly
+ * what a live run would do, but write the prompts to a task file for a local
+ * coding agent instead of calling a provider. No credentials required.
+ */
+export async function exportEnrichTasks(options: ExportTasksOptions): Promise<ExportTasksResult> {
+  const dataDir = resolve(options.dataDir);
+  const { repoDir, repoUrl, cleanup, name } = await materializeEnrichTarget({
+    dataDir,
+    target: options.target,
+    name: options.name,
+    ref: options.ref,
+  });
+  try {
+    const { model } = await extractRepoModel(repoDir, {
+      repoName: name,
+      repoUrl,
+      ref: options.ref,
+    });
+    const slug = model.repo.slug;
+    const enrichmentDir = join(dataDir, "enrichment", slug);
+    const overlays = loadOverlays(overlayDirsFor(dataDir, repoDir, slug));
+    const coreDocKinds =
+      options.coreDocs !== false
+        ? planCoreDocs(model, {
+            repoDocsDir: join(repoDir, ".necronomidoc", CORE_DOCS_SUBDIR),
+            overrideDir: join(enrichmentDir, CORE_DOCS_SUBDIR),
+            llmDir: enrichmentDir,
+          }).needed
+        : [];
+    const { taskFile, plan } = buildEnrichmentTaskFile(model, {
+      overlays,
+      readSource: (path) => {
+        try {
+          return readFileSync(join(repoDir, path), "utf8");
+        } catch {
+          return undefined;
+        }
+      },
+      maxFiles: options.maxFiles,
+      coreDocKinds,
+      subsystems: options.subsystems,
+    });
+    const outFile = resolve(options.outFile);
+    writeFileSync(outFile, JSON.stringify(taskFile, null, 2) + "\n");
+    return {
+      slug,
+      outFile,
+      fileTasks: plan.work.length,
+      coreDocTasks: coreDocKinds,
+      subsystemsTask: options.subsystems === true,
+      skippedHuman: plan.skippedHuman,
+      skippedFresh: plan.skippedFresh,
+      filesOverCap: plan.filesOverCap,
+    };
+  } finally {
+    cleanup?.();
+  }
+}
+
+export interface ImportResultsOptions {
+  dataDir: string;
+  target: string;
+  name?: string;
+  ref?: string;
+  /** The agent-written results file. */
+  resultsFile: string;
+  /** The task file the results answer (written by `--export-tasks`). */
+  tasksFile: string;
+}
+
+export interface ImportResultsResult {
+  slug: string;
+  applied: number;
+  overlaysWritten: number;
+  coreDocsWritten: number;
+  subsystemsProposed?: number;
+  failures: { id: string; error: string }[];
+  unmatchedResults: string[];
+  missingTasks: string[];
+  published: boolean;
+}
+
+function readJsonFile(path: string, what: string): unknown {
+  const absolute = resolve(path);
+  try {
+    return JSON.parse(readFileSync(absolute, "utf8"));
+  } catch (err) {
+    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Agent-mode step 2 (`enrich --import-results`): validate the agent's results
+ * against the task file, then persist and publish them through the exact same
+ * paths a live run uses. Hashes recorded at export time stamp the overlays, so
+ * code changed since the export shows up as stale — the standard staleness
+ * machinery, not a special case.
+ */
+export async function importEnrichResults(
+  options: ImportResultsOptions,
+): Promise<ImportResultsResult> {
+  const parsedTasks = EnrichmentTaskFile.safeParse(readJsonFile(options.tasksFile, "tasks file"));
+  if (!parsedTasks.success) {
+    throw new Error(`Invalid tasks file ${options.tasksFile}: ${parsedTasks.error.message}`);
+  }
+  const taskFile = parsedTasks.data;
+  const parsedResults = EnrichmentResultsFile.safeParse(
+    readJsonFile(options.resultsFile, "results file"),
+  );
+  if (!parsedResults.success) {
+    throw new Error(`Invalid results file ${options.resultsFile}: ${parsedResults.error.message}`);
+  }
+  const resultsFile = parsedResults.data;
+  if (resultsFile.repo && resultsFile.repo !== taskFile.repo.slug) {
+    throw new Error(
+      `Results file is for repo "${resultsFile.repo}" but the tasks file is for "${taskFile.repo.slug}".`,
+    );
+  }
+
+  const dataDir = resolve(options.dataDir);
+  const { repoDir, repoUrl, cleanup, name } = await materializeEnrichTarget({
+    dataDir,
+    target: options.target,
+    name: options.name,
+    ref: options.ref,
+  });
+  try {
+    const { model } = await extractRepoModel(repoDir, {
+      repoName: name,
+      repoUrl,
+      ref: options.ref,
+    });
+    const slug = model.repo.slug;
+    if (slug !== taskFile.repo.slug) {
+      throw new Error(
+        `Tasks file is for repo "${taskFile.repo.slug}" but the target extracted as "${slug}" — same repo/name required.`,
+      );
+    }
+    const enrichmentDir = join(dataDir, "enrichment", slug);
+    const applied = applyEnrichmentResults(taskFile, resultsFile);
+
+    if (applied.overlays.length > 0) persistLlmOverlays(enrichmentDir, applied.overlays);
+    if (applied.coreDocs.length > 0) persistLlmCoreDocs(enrichmentDir, applied.coreDocs);
+    if (applied.subsystems) {
+      mkdirSync(enrichmentDir, { recursive: true });
+      writeFileSync(
+        join(enrichmentDir, LLM_SUBSYSTEMS_FILE),
+        JSON.stringify(applied.subsystems, null, 2) + "\n",
+      );
+    }
+    publishModel(dataDir, model, repoDir);
+
+    return {
+      slug,
+      applied: applied.applied,
+      overlaysWritten: applied.overlays.length,
+      coreDocsWritten: applied.coreDocs.length,
+      subsystemsProposed: applied.subsystems?.length,
+      failures: applied.failures,
+      unmatchedResults: applied.unmatchedResults,
+      missingTasks: applied.missingTasks,
+      published: true,
+    };
   } finally {
     cleanup?.();
   }

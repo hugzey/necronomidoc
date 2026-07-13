@@ -10,7 +10,7 @@ import {
   type CoreDocsManifest,
   type DocModel,
 } from "@necronomidoc/docmodel";
-import type { LlmClient } from "./llm/client.js";
+import type { LlmClient, LlmCompleteRequest } from "./llm/client.js";
 
 /**
  * Core docs (slice 7): four documents every repo publishes — project
@@ -454,8 +454,42 @@ const CORE_DOC_SYSTEM_PROMPT = [
   "top-level `#` heading. Respond with JSON only, matching the schema.",
 ].join(" ");
 
+/**
+ * The full completion request for one core-doc kind — shared by the live
+ * generator below and the agent task export, so both send identical prompts.
+ */
+export function coreDocRequestFor(kind: CoreDocKind, context: string): LlmCompleteRequest {
+  return {
+    system: CORE_DOC_SYSTEM_PROMPT,
+    prompt: `${CORE_DOC_INSTRUCTIONS[kind]}\n\n${context}`,
+    maxOutputTokens: 3000,
+    jsonSchema: CORE_DOC_JSON_SCHEMA,
+  };
+}
+
+/**
+ * Parse one core-doc model response and stamp the cacheable `LlmCoreDoc`
+ * (repo hash for staleness, model id for provenance). Shared by the live
+ * generator and the agent results import. Throws on malformed JSON.
+ */
+export function llmCoreDocFromResponse(
+  kind: CoreDocKind,
+  text: string,
+  meta: { sourceRepoHash: string; model: string; now: () => string },
+): LlmCoreDoc {
+  const parsed = LlmCoreDocResponse.parse(JSON.parse(text));
+  return {
+    kind,
+    title: parsed.title,
+    content: parsed.content,
+    sourceRepoHash: meta.sourceRepoHash,
+    model: meta.model,
+    updatedAt: meta.now(),
+  };
+}
+
 /** Shared context block: layout, files (with summaries), packages, README. */
-function repoContext(model: DocModel): string {
+export function coreDocContext(model: DocModel): string {
   const lines: string[] = [`Repository: ${model.repo.name}`, "", "Modules (dir — file count):"];
   for (const [dir, count] of moduleCounts(model)) lines.push(`- ${dir} — ${count}`);
 
@@ -506,7 +540,7 @@ export async function generateCoreDocs(
 ): Promise<GenerateCoreDocsResult> {
   const now = options.now ?? (() => new Date().toISOString());
   const repoHash = repoContentHash(model.files);
-  const context = repoContext(model);
+  const context = coreDocContext(model);
   const result: GenerateCoreDocsResult = {
     docs: [],
     calls: 0,
@@ -525,24 +559,17 @@ export async function generateCoreDocs(
       break;
     }
     try {
-      const completion = await client.complete({
-        system: CORE_DOC_SYSTEM_PROMPT,
-        prompt: `${CORE_DOC_INSTRUCTIONS[kind]}\n\n${context}`,
-        maxOutputTokens: 3000,
-        jsonSchema: CORE_DOC_JSON_SCHEMA,
-      });
+      const completion = await client.complete(coreDocRequestFor(kind, context));
       result.calls++;
       result.inputTokens += completion.inputTokens;
       result.outputTokens += completion.outputTokens;
-      const parsed = LlmCoreDocResponse.parse(JSON.parse(completion.text));
-      result.docs.push({
-        kind,
-        title: parsed.title,
-        content: parsed.content,
-        sourceRepoHash: repoHash,
-        model: client.model,
-        updatedAt: now(),
-      });
+      result.docs.push(
+        llmCoreDocFromResponse(kind, completion.text, {
+          sourceRepoHash: repoHash,
+          model: client.model,
+          now,
+        }),
+      );
     } catch (err) {
       result.failures.push({ kind, error: (err as Error).message });
     }

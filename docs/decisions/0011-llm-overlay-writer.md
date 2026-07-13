@@ -1,6 +1,6 @@
 # 0011 — LLM overlay writer: Anthropic SDK, per-file batching, hash-cached
 
-**Status:** Accepted (slice 3)
+**Status:** Accepted (slice 3) — amended by [0016](0016-llm-provider-agnostic.md): the client is now selected per provider (Anthropic / OpenAI-compatible / Bedrock) or replaced entirely by the agent task export/import loop; `ANTHROPIC_API_KEY` is no longer required.
 
 ## Context
 

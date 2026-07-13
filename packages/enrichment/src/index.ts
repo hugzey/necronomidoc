@@ -6,3 +6,8 @@ export * from "./staleness.js";
 export * from "./subsystems.js";
 export * from "./llm/client.js";
 export * from "./llm/writer.js";
+export * from "./llm/providers/anthropic.js";
+export * from "./llm/providers/openai.js";
+export * from "./llm/providers/bedrock.js";
+export * from "./llm/resolve.js";
+export * from "./llm/tasks.js";

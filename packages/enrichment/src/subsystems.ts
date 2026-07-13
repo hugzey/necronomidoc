@@ -9,7 +9,7 @@ import {
   type DocModel,
   type SubsystemsManifest,
 } from "@necronomidoc/docmodel";
-import type { LlmClient } from "./llm/client.js";
+import type { LlmClient, LlmCompleteRequest } from "./llm/client.js";
 
 /**
  * Subsystem overviews (slice 3 §3). A subsystem is a named group of files with
@@ -178,10 +178,11 @@ const SUBSYSTEM_JSON_SCHEMA: Record<string, unknown> = {
  * promotion to a human overlay (slice-3 risk mitigation) — they participate
  * in the map only until a human `subsystems.yaml` exists.
  */
-export async function proposeSubsystems(
-  model: DocModel,
-  client: LlmClient,
-): Promise<{ subsystems: Subsystem[]; inputTokens: number; outputTokens: number }> {
+/**
+ * The full subsystem-proposal completion request — shared by the live
+ * proposer below and the agent task export, so both send identical prompts.
+ */
+export function subsystemsRequestFor(model: DocModel): LlmCompleteRequest {
   const fileLines = model.files.map((f) => {
     const summary = f.enrichment?.summary ?? "";
     const imports = f.imports
@@ -205,20 +206,39 @@ export async function proposeSubsystems(
     fileLines.length > 400 ? `… (${fileLines.length - 400} more files)` : "",
   ].join("\n");
 
-  const result = await client.complete({
+  return {
     system:
       "You are a software architect mapping a codebase into subsystems for a documentation site. Respond with JSON only, matching the requested schema.",
     prompt,
     maxOutputTokens: 4000,
     jsonSchema: SUBSYSTEM_JSON_SCHEMA,
-  });
-  const parsed = LlmSubsystemResponse.parse(JSON.parse(result.text));
+  };
+}
+
+/**
+ * Parse one subsystem-proposal response into `provenance: llm` subsystems
+ * with unique slug ids. Shared by the live proposer and the agent results
+ * import. Throws on malformed JSON.
+ */
+export function subsystemsFromResponse(text: string): Subsystem[] {
+  const parsed = LlmSubsystemResponse.parse(JSON.parse(text));
   const seen = new Set<string>();
-  const subsystems = parsed.subsystems.map((s) => {
+  return parsed.subsystems.map((s) => {
     let id = slugify(s.name);
     while (seen.has(id)) id = `${id}-2`;
     seen.add(id);
     return { ...s, id, provenance: "llm" as const };
   });
-  return { subsystems, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+}
+
+export async function proposeSubsystems(
+  model: DocModel,
+  client: LlmClient,
+): Promise<{ subsystems: Subsystem[]; inputTokens: number; outputTokens: number }> {
+  const result = await client.complete(subsystemsRequestFor(model));
+  return {
+    subsystems: subsystemsFromResponse(result.text),
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+  };
 }
