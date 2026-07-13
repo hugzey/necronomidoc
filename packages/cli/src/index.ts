@@ -6,6 +6,7 @@ import {
   buildRepo,
   cloneDirFor,
   enrichRepo,
+  exportState,
   KNOWN_PROVIDERS,
   listAdapters,
   loadConfig,
@@ -61,7 +62,7 @@ Usage:
   necronomidoc enrich <repo-id-or-path-or-url> [--dry-run] [--max-files <n>]
                  [--max-tokens <n>] [--model <id>] [--subsystems]
                  [--review-stale] [--name <n>] [--ref <ref>] [--data-dir <dir>]
-  necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>]
+  necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
                  [--api-token-env <VAR>] [--disabled] [--data-dir <dir>]
@@ -69,10 +70,12 @@ Usage:
   necronomidoc repo remove <id> [--purge] [--data-dir <dir>]
   necronomidoc validate <docmodel.json>
   necronomidoc export-schemas [<out.json>]
+  necronomidoc export <out-dir> [--data-dir <dir>]
   necronomidoc doctor [--data-dir <dir>]
 
 Env: DOCS_DATA_DIR, PORT, DOCS_TOKEN, SITE_DIR, DOCS_WEBHOOK_SECRET,
      DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS,
+     DOCS_AUTH_REQUIRED, DOCS_SESSION_SECRET, DOCS_LOG_FORMAT,
      ANTHROPIC_API_KEY (enrich), NECRONOMIDOC_ENRICH_MODEL (enrich)
 `;
 
@@ -176,6 +179,7 @@ function cmdServe(flags: Flags): number {
     dataDir: str(flags, "data-dir"),
     siteDir: str(flags, "site-dir"),
     token: str(flags, "token"),
+    authRequired: flags["auth"] === true ? true : undefined,
     port: str(flags, "port") ? Number.parseInt(str(flags, "port")!, 10) : undefined,
   });
   const base = `http://localhost:${config.port}`;
@@ -183,8 +187,26 @@ function cmdServe(flags: Flags): number {
   console.log(`  site      ${base}/`);
   console.log(`  MCP       ${base}/mcp   (streamable HTTP, stateless)`);
   console.log(`  status    ${base}/api/status`);
+  console.log(`  health    ${base}/healthz`);
   console.log(`  data dir  ${config.dataDir}`);
+  console.log(`  auth      ${config.authRequired ? "required (shared token)" : "open"}`);
   console.log("Press Ctrl+C to stop.");
+  return 0;
+}
+
+/** Export curation state (registry + enrichment overlays) for versioned backup. */
+function cmdExport(flags: Flags): number {
+  const out = (flags._ as string[])[1];
+  if (!out) {
+    console.error("export: missing <out-dir>");
+    return 1;
+  }
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+  const result = exportState(config.dataDir, resolve(out));
+  console.log(`✓ exported curation state → ${result.outDir}`);
+  console.log(`  registry.json   ${result.registryCopied ? "copied" : "none yet"}`);
+  console.log(`  enrichment/     ${result.enrichmentCopied ? "copied" : "none yet"}`);
+  console.log("  commit this directory to version your curation (see docs/deploy/backup-restore.md).");
   return 0;
 }
 
@@ -290,6 +312,30 @@ async function cmdDoctor(flags: Flags): Promise<number> {
   const config = loadConfig({ dataDir: str(flags, "data-dir") });
   const adapters = listAdapters();
 
+  // Secrets hygiene (slice 6): catch placeholder/weak credentials before they
+  // reach the internet. Warnings only — a laptop demo shouldn't exit 1.
+  const weak = /^(changeme|change-me|password|secret|token|test|example|default|admin|1234|12345678)$/i;
+  const hygiene: string[] = [];
+  if (config.token && (weak.test(config.token) || config.token.length < 16)) {
+    hygiene.push("DOCS_TOKEN looks weak or default — use a long random value (e.g. `openssl rand -hex 32`).");
+  }
+  if (config.webhookSecret && (weak.test(config.webhookSecret) || config.webhookSecret.length < 16)) {
+    hygiene.push("DOCS_WEBHOOK_SECRET looks weak or default — use a long random value.");
+  }
+  if (config.authRequired && !config.token) {
+    hygiene.push("DOCS_AUTH_REQUIRED is on but DOCS_TOKEN is empty — the server will refuse to start.");
+  }
+  if (!config.authRequired && !config.token) {
+    hygiene.push(
+      "No auth configured: site/MCP/status are public and /api/build is disabled. Fine on a trusted network; set DOCS_TOKEN (+ DOCS_AUTH_REQUIRED=1 or reverse-proxy auth) before exposing this host.",
+    );
+  }
+  if (hygiene.length > 0) {
+    console.log("Secrets & auth:");
+    for (const warning of hygiene) console.log(`  ⚠ ${warning}`);
+    console.log("");
+  }
+
   console.log("Adapter toolchains:");
   const missing = new Map<string, string>(); // language → fix
   for (const adapter of adapters) {
@@ -384,6 +430,8 @@ async function main(): Promise<number> {
       return cmdValidate(flags);
     case "export-schemas":
       return cmdExportSchemas(flags);
+    case "export":
+      return cmdExport(flags);
     case "doctor":
       return cmdDoctor(flags);
     default:

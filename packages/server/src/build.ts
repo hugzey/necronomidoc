@@ -22,6 +22,7 @@ import {
   mergeEnrichment,
 } from "@necronomidoc/enrichment";
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
+import { ensureDataDirVersion } from "./datadir.js";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
 const ADAPTERS: DocAdapter[] = [
@@ -149,6 +150,10 @@ export function publishModel(
   /** Omitted for pre-extracted IR (POST /api/ir): only server-side overlays apply. */
   repoDir?: string,
 ): { model: DocModel; entry: RegistryEntry } {
+  // Every writer stamps the dir's schema version, so a dir produced by CLI
+  // builds alone still carries the upgrade-guard marker (slice 6).
+  ensureDataDirVersion(dataDir);
+
   const serverEnrichmentDir = join(dataDir, "enrichment", model.repo.slug);
   const merged = mergeEnrichment(model, {
     overlayDirs: repoDir

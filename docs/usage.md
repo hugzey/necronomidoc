@@ -137,14 +137,28 @@ node packages/cli/dist/index.js serve --port 4319
 - Site: <http://localhost:4319/>
 - MCP endpoint: `http://localhost:4319/mcp` (streamable HTTP, stateless)
 - Status: <http://localhost:4319/api/status>
-- Health: <http://localhost:4319/health>
+- Health: <http://localhost:4319/healthz>
 
-Env vars mirror the flags: `DOCS_DATA_DIR`, `PORT`, `SITE_DIR`, `DOCS_TOKEN`.
+Env vars mirror the flags: `DOCS_DATA_DIR`, `PORT`, `SITE_DIR`, `DOCS_TOKEN` —
+full list in the [configuration reference](deploy/configuration.md).
+
+### Team-private mode (slice 6)
+
+```bash
+node packages/cli/dist/index.js serve --token "$(openssl rand -hex 32)" --auth
+```
+
+With `--auth` (or `DOCS_AUTH_REQUIRED=1`) the whole surface requires the token:
+browsers sign in at `/login` and get a session cookie; MCP and API clients send
+`Authorization: Bearer <token>`. `/healthz` stays public for uptime monitors.
+See [decision 0014](decisions/0014-auth-baseline.md) and the
+[deployment guides](deploy/) for TLS, reverse-proxy SSO, and backups.
 
 ## Connect the MCP endpoint from Claude Code
 
 ```bash
 claude mcp add --transport http necronomidoc http://localhost:4319/mcp
+# team-private server? add: --header "Authorization: Bearer $DOCS_TOKEN"
 ```
 
 (Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
@@ -228,6 +242,12 @@ changes, the overlay is kept but flagged `stale: true`.
 node packages/cli/dist/index.js validate .necronomidoc-data/repos/sample-react-app/docmodel.json
 node packages/cli/dist/index.js export-schemas docmodel.schema.json   # JSON Schema for non-TS adapters
 ```
+
+## Deploy it for the team (slice 6)
+
+- [EC2](deploy/ec2.md) · [Azure App Service](deploy/azure-app-service.md) · [on-prem/local](deploy/on-prem.md) — each ends with the same [smoke test](deploy/smoke-test.md).
+- [Configuration reference](deploy/configuration.md) — every env var and endpoint.
+- [Backup, restore & upgrades](deploy/backup-restore.md) — the data dir is the whole state; `necronomidoc export <dir>` snapshots just the curated parts for git.
 
 ## Run the tests
 

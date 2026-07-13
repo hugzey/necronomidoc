@@ -17,6 +17,7 @@ Architectural and directional decisions for the documentation server project. On
 | [0011](0011-llm-overlay-writer.md) | LLM overlay writer: Anthropic SDK client, per-file batching, content-hash caching, hard budget caps | Accepted |
 | [0012](0012-openapi-adapter.md) | OpenAPI adapter: bundled-spec content, native daisyUI reference UI, browser-direct try-it | Accepted |
 | [0013](0013-backend-adapters-toolchains.md) | Backend adapters (Python via griffe, C# via DocFX) + opt-in toolchain packaging, `doctor`, `POST /api/ir` | Accepted |
+| [0014](0014-auth-baseline.md) | Access control baseline: opt-in shared-token auth — session cookies for browsers, bearer for MCP/API; reverse-proxy SSO as the supported alternative | Accepted |
 
 ## Statuses
 

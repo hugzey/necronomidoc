@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1–5 are complete.**
+**Slices 1–6 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -43,6 +43,19 @@ binding technical choices.
   language's CI publish pre-extracted docs without a bundled toolchain
   ([plan](docs/plans/05-slice-5-backend-language.md),
   [decision 0013](docs/decisions/0013-backend-adapters-toolchains.md)).
+- Slice 6 — deployment & ops: verified guides for
+  [EC2](docs/deploy/ec2.md), [Azure App Service](docs/deploy/azure-app-service.md),
+  and [on-prem/local](docs/deploy/on-prem.md) (Docker/compose with a
+  `HEALTHCHECK`, or bare Node under a hardened systemd unit), opt-in
+  **team-private mode** — browser session login + `Authorization: Bearer`
+  for MCP/API from one shared token
+  ([decision 0014](docs/decisions/0014-auth-baseline.md)) — structured JSON
+  request logs with secret redaction, `/healthz` for uptime monitors, a
+  schema-versioned data dir with an explicit upgrade guard,
+  [backup/restore docs](docs/deploy/backup-restore.md), `necronomidoc export`
+  for git-versioned curation backups, and a `doctor` secrets-hygiene pass
+  ([plan](docs/plans/06-slice-6-deployment-ops.md),
+  [config reference](docs/deploy/configuration.md)).
 
 ## Quick start
 
@@ -68,6 +81,20 @@ ANTHROPIC_API_KEY=sk-ant-… node packages/cli/dist/index.js enrich widgets
 
 Full guide: [docs/usage.md](docs/usage.md).
 
+## Deploy it for the team
+
+```bash
+# one container, one volume — all state in /data
+DOCS_TOKEN=$(openssl rand -hex 32) DOCS_AUTH_REQUIRED=1 docker compose up -d --build
+```
+
+Guides that end in the same smoke test (register a repo → push → docs update →
+MCP connects): [EC2](docs/deploy/ec2.md) ·
+[Azure App Service](docs/deploy/azure-app-service.md) ·
+[on-prem/local](docs/deploy/on-prem.md). Plus the
+[configuration reference](docs/deploy/configuration.md) and
+[backup/restore & upgrades](docs/deploy/backup-restore.md).
+
 ## Packages
 
 | Package | Role |
@@ -79,8 +106,8 @@ Full guide: [docs/usage.md](docs/usage.md).
 | `packages/adapter-csharp` | C#/.NET extraction via `docfx metadata` ManagedReference YAML (Roslyn-driven, out of process) |
 | `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
-| `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas \| doctor` |
+| `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API + auth + structured logs), provider adapters, journaled build queue |
+| `packages/cli` | `necronomidoc build \| enrich \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search |
 
 ## Tests

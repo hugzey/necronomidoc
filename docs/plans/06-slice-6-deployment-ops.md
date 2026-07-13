@@ -1,5 +1,12 @@
 # Slice 6 — Deployment & ops hardening: Docker, EC2 / Azure / on-prem guides, auth, backups
 
+**Status: ✅ Done** — shipped opt-in shared-token auth (browser session login + bearer for MCP/API, [decision 0014](../decisions/0014-auth-baseline.md)), `docker-compose.yml` + image `HEALTHCHECK` + a hardened systemd unit ([`deploy/necronomidoc.service`](../../deploy/necronomidoc.service)), deployment guides for [EC2](../deploy/ec2.md) / [Azure App Service](../deploy/azure-app-service.md) / [on-prem](../deploy/on-prem.md) sharing one [smoke test](../deploy/smoke-test.md), a [configuration reference](../deploy/configuration.md), structured JSON request logging with hook-source tagging and secret redaction, `/healthz`, a data-dir `schemaVersion` stamp with an explicit newer-version refusal, [backup/restore docs](../deploy/backup-restore.md), `necronomidoc export` for git-versioned curation backups, and a `doctor` secrets-hygiene pass.
+
+> **Verification note:** the EC2/Azure guides are written against the packaged
+> Docker/compose/systemd artifacts and each ends in the shared smoke test, but
+> the <1-hour clean-room deploys (acceptance criterion 1) still need to be
+> clocked on fresh cloud instances by an operator with cloud credentials.
+
 **Goal (requirement 8 + [decision 0002](../decisions/0002-hosting-portability.md)):** anyone can stand this up in under an hour on a single EC2, a single Azure App Service, or an on-prem/local machine — securely, with backups and updates understood. (Portability is enforced from slice 1; this slice packages and documents it.)
 
 ## Work breakdown
