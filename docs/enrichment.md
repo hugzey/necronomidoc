@@ -1,4 +1,4 @@
-# Enrichment guide — LLM summaries, staleness, subsystems (slice 3)
+# Enrichment guide — LLM summaries, staleness, subsystems
 
 The enrichment layer (decision [0004](decisions/0004-enrichment-layer.md))
 sits between extraction and presentation. Three producers feed it, merged per

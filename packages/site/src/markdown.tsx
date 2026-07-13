@@ -1,5 +1,6 @@
 import { isValidElement, useEffect, useId, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 import type { DocFile } from "./api.js";
 import { resolveDocLink, slugifyAnchor } from "./resolve.js";
@@ -81,17 +82,23 @@ function MermaidBlock({ code }: { code: string }) {
  * Render a markdown document from the doc model. Headings get the same anchor
  * ids the adapter gave their section symbols (so tree/search/MCP links land),
  * and relative links to other documented files become router links.
+ *
+ * `resolveHref` swaps in a different link-resolution scheme (the /help
+ * handbook uses one over its bundled pages); when it declines a relative
+ * link, the link degrades to plain text rather than a dead navigation.
  */
 export function MarkdownDoc({
   content,
-  slug,
-  path,
-  files,
+  slug = "",
+  path = "",
+  files = [],
+  resolveHref,
 }: {
   content: string;
-  slug: string;
-  path: string;
-  files: Pick<DocFile, "path">[];
+  slug?: string;
+  path?: string;
+  files?: Pick<DocFile, "path">[];
+  resolveHref?: (href: string) => string | undefined;
 }) {
   const heading =
     (Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
@@ -112,9 +119,18 @@ export function MarkdownDoc({
     h5: heading("h5"),
     h6: heading("h6"),
     a: ({ href, children }) => {
-      const internal = href ? resolveDocLink(slug, path, href, files) : undefined;
+      const internal = href
+        ? resolveHref
+          ? resolveHref(href)
+          : resolveDocLink(slug, path, href, files)
+        : undefined;
       if (internal) return <Link to={internal}>{children}</Link>;
       if (href?.startsWith("#")) return <a href={href}>{children}</a>;
+      // With a custom resolver, an unresolved relative link points at nothing
+      // servable — render its text instead of a link into the SPA fallback.
+      if (resolveHref && href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("//")) {
+        return <>{children}</>;
+      }
       return (
         <a href={href} target="_blank" rel="noreferrer">
           {children}
@@ -142,7 +158,10 @@ export function MarkdownDoc({
 
   return (
     <article className="prose prose-sm max-w-none sm:prose-base">
-      <ReactMarkdown components={components}>{content}</ReactMarkdown>
+      {/* GFM: tables, strikethrough, task lists — README/guide staples. */}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {content}
+      </ReactMarkdown>
     </article>
   );
 }

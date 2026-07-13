@@ -1,4 +1,4 @@
-# Core docs — overview, conventions, packages, architecture (slice 7)
+# Core docs — overview, conventions, packages, architecture
 
 Every documented repo publishes four **core documents** (decision
 [0015](decisions/0015-core-docs.md)):

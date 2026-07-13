@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-10
-- **Decider:** Luke (project owner), informed by [research 01](../research/01-doc-ui-frameworks.md)
+- **Decider:** Luke (project owner), informed by the doc-UI framework research
 
 ## Context
 
@@ -33,7 +33,7 @@ Fallback if Fumadocs' React Router support proves too immature during the slice-
 - Fumadocs moves fast with a small maintainer team — pin versions, wrap its APIs behind our own thin site-build module so churn is absorbed in one place.
 - Slice 1 must include a short spike validating: React Router SPA static build, custom source feeding generated content, and client-side search over generated pages.
 
-## Spike outcome (2026-07-10, slice 1)
+## Spike outcome (2026-07-10)
 
 **Fallback path taken.** Slice 1 ships the doc site as a **React Router 7 + Vite
 SPA with our own layout**, fed by a custom source (our IR + enrichment merge

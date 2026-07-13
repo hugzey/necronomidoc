@@ -12,7 +12,7 @@ stack; the team confirmed **.NET/C# must be supported too**, so this slice ships
 both — which also proves the toolchain-packaging pattern against two very
 different toolchains instead of one.
 
-[Research 02](../research/02-doc-extraction-adapters.md) picked the extractors:
+The doc-extraction adapter research picked the extractors:
 
 - **Python — [griffe](https://mkdocstrings.github.io/griffe/).** `griffe dump
   --full` emits a JSON object model (modules → classes/functions/attributes,

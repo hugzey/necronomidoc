@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-10
-- **Decider:** Project (from [research 03](../research/03-mcp-static-hosting.md))
+- **Decider:** Project (from the MCP static-hosting research)
 
 ## Context
 

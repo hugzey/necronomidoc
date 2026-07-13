@@ -43,7 +43,7 @@ Webhooks are **inbound** — GitHub/ADO cloud can't reach a host that isn't inte
          -H "Content-Type: application/json" -d '{"repoId":"my-repo"}'
    ```
 
-   Repos in languages the host has no toolchain for can extract in CI and `POST /api/ir` instead (slice 5, [decision 0013](../decisions/0013-backend-adapters-toolchains.md)).
+   Repos in languages the host has no toolchain for can extract in CI and `POST /api/ir` instead ([decision 0013](../decisions/0013-backend-adapters-toolchains.md)).
 3. **Polling fallback:** a cron on the server (`crontab -e`) that posts the same REST trigger on a schedule — crude but zero external coupling.
 
 The server still needs **outbound** access to clone the repos (git over HTTPS, token via the repo's `tokenEnv`) — allow that egress or use an internal mirror.

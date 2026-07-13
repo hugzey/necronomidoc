@@ -1,7 +1,8 @@
 # Usage — doc site + MCP from your repos
 
-necronomidoc points at a TypeScript/React repo and produces (a) an interactive
-doc site and (b) an MCP endpoint, both served by one portable Node process with
+necronomidoc points at your repos — TypeScript/React, Python, C#/.NET,
+OpenAPI 3.x specs, markdown prose — and produces (a) an interactive doc site
+and (b) an MCP endpoint, both served by one portable Node process with
 filesystem-only state.
 
 ## Prerequisites
@@ -48,7 +49,7 @@ precedence: a file the repo ships at `.necronomidoc/docs/<kind>.md` > a
 server-side override > LLM-generated (via `enrich`) > an always-present
 heuristic floor. See [core-docs.md](core-docs.md).
 
-## OpenAPI specs → interactive API reference (slice 4)
+## OpenAPI specs → interactive API reference
 
 Any OpenAPI 3.x spec in the repo (`openapi.yaml`, `api/spec.json`, … — found
 by content sniffing, not filename) is documented alongside the code:
@@ -72,7 +73,7 @@ that fails validation gets a page showing the validation error; the rest of
 the repo's docs still build. Sniff-only candidates that fail validation are
 treated as not-specs and skipped.
 
-## Python and C#/.NET repos (slice 5)
+## Python and C#/.NET repos
 
 Backend repos document exactly like TypeScript ones — `build` just works once
 the host has the language's toolchain:
@@ -146,9 +147,12 @@ node packages/cli/dist/index.js serve --port 4319
 - Health: <http://localhost:4319/healthz>
 
 Env vars mirror the flags: `DOCS_DATA_DIR`, `PORT`, `SITE_DIR`, `DOCS_TOKEN` —
-full list in the [configuration reference](deploy/configuration.md).
+full list in the [configuration reference](deploy/configuration.md). Every
+endpoint the server exposes is catalogued in the
+[HTTP API reference](api.md), and this documentation is served by the running
+server at `/help`.
 
-### Team-private mode (slice 6)
+### Team-private mode
 
 ```bash
 node packages/cli/dist/index.js serve --token "$(openssl rand -hex 32)" --auth
@@ -157,8 +161,9 @@ node packages/cli/dist/index.js serve --token "$(openssl rand -hex 32)" --auth
 With `--auth` (or `DOCS_AUTH_REQUIRED=1`) the whole surface requires the token:
 browsers sign in at `/login` and get a session cookie; MCP and API clients send
 `Authorization: Bearer <token>`. `/healthz` stays public for uptime monitors.
-See [decision 0014](decisions/0014-auth-baseline.md) and the
-[deployment guides](deploy/) for TLS, reverse-proxy SSO, and backups.
+See [decision 0014](decisions/0014-auth-baseline.md) and the deployment
+guides ([EC2](deploy/ec2.md), [Azure App Service](deploy/azure-app-service.md),
+[on-prem](deploy/on-prem.md)) for TLS, reverse-proxy SSO, and backups.
 
 ## Connect the MCP endpoint from Claude Code
 
@@ -181,7 +186,7 @@ an existing function that formats currency?"*, or *"where does counter state
 live and what shouldn't go in it?"*. Measure answer quality with
 `npm run eval:mcp`.
 
-## Automatic rebuilds on push (slice 2)
+## Automatic rebuilds on push
 
 Register the repo, configure a webhook, and pushes rebuild its docs with no
 manual step:
@@ -211,7 +216,7 @@ curl -X POST localhost:4319/api/build \
 
 The MCP handler hot-reloads the new manifests immediately — no restart.
 
-## Fill the gaps with LLM summaries (slice 3)
+## Fill the gaps with LLM summaries
 
 On repos with sparse doc comments, let the LLM overlay writer summarize every
 file and symbol that no human overlay covers:
@@ -242,7 +247,7 @@ generates any [core docs](core-docs.md) the repo hasn't curated
 reviewed subsystem map, and `--review-stale` to list human overlays whose
 code has changed. Full guide: [enrichment.md](enrichment.md).
 
-## Generate agent skills from documented repos (slice 8)
+## Generate agent skills from documented repos
 
 Turn published docs into portable [Agent Skills](skills.md) — `SKILL.md`
 folders an agent harness loads by description:
@@ -262,7 +267,7 @@ as zips (`GET /api/skills/<id>/download`), and browsable on the site at
 `enrich` (`--export-tasks` / `--import-results`). Full guide:
 [skills.md](skills.md).
 
-## Fill your own templates — artefacts (slice 8)
+## Fill your own templates — artefacts
 
 Hand the server a markdown or Word template and it fills it from one, many,
 or all repos ([guide](artefacts.md)):
@@ -279,7 +284,7 @@ template without markers is planned into sections from its headings. Results
 persist under `data/artefacts/` and on the site at `/artefacts`. Agent mode:
 `--export-tasks` / `--import-results`, same as everywhere else.
 
-## Adopt the documentation standard (slice 8)
+## Adopt the documentation standard
 
 The [documentation standard](doc-standard.md) says what to write so docs
 serve humans and agents alike. Scaffold it into any repo:
@@ -312,7 +317,7 @@ node packages/cli/dist/index.js validate .necronomidoc-data/repos/sample-react-a
 node packages/cli/dist/index.js export-schemas docmodel.schema.json   # JSON Schema for non-TS adapters
 ```
 
-## Deploy it for the team (slice 6)
+## Deploy it for the team
 
 - [EC2](deploy/ec2.md) · [Azure App Service](deploy/azure-app-service.md) · [on-prem/local](deploy/on-prem.md) — each ends with the same [smoke test](deploy/smoke-test.md).
 - [Configuration reference](deploy/configuration.md) — every env var and endpoint.

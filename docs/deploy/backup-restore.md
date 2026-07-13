@@ -32,7 +32,7 @@ tar -C /var/lib/necronomidoc -xzf necronomidoc-backup-2026-07-13.tar.gz
 DOCS_DATA_DIR=/var/lib/necronomidoc node packages/cli/dist/index.js serve
 ```
 
-That is the whole procedure — no schema imports, no rebuilds. The restored host serves the docs, MCP manifests, registry, and build history exactly as snapshotted (slice 6 acceptance criterion 3). Webhook/API secrets are **not** in the data dir (they are env vars by design) — restore those from your secret store.
+That is the whole procedure — no schema imports, no rebuilds. The restored host serves the docs, MCP manifests, registry, and build history exactly as snapshotted. Webhook/API secrets are **not** in the data dir (they are env vars by design) — restore those from your secret store.
 
 ## Curation export (versioned, git-friendly)
 

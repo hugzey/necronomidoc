@@ -80,7 +80,8 @@ function dirname(p: string): string {
   return i === -1 ? "" : p.slice(0, i);
 }
 
-function normalizeSegments(p: string): string {
+/** Collapse `.`/`..` segments in a relative path (never escapes the root). */
+export function normalizeSegments(p: string): string {
   const out: string[] = [];
   for (const seg of p.split("/")) {
     if (!seg || seg === ".") continue;

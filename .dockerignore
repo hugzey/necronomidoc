@@ -3,7 +3,6 @@ packages/*/node_modules
 packages/*/dist
 packages/site/dist
 .git
-docs
 fixtures
 data
 *.log

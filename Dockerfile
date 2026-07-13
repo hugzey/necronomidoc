@@ -19,6 +19,8 @@ COPY package.json package-lock.json ./
 COPY packages ./packages
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.base.json vitest.config.ts ./
+# The site build bundles docs/**.md into the SPA as the served /help handbook.
+COPY docs ./docs
 RUN npm run build:all
 
 # ---- runtime stage ----

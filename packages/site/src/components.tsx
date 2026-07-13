@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { DocFile, DocModel, Registry } from "./api.js";
+import { HELP_NAV, helpHref } from "./help.js";
 import { fileHref, type SymbolResolver } from "./resolve.js";
 
 // ---- Badges (daisyUI badge variants per symbol kind / provenance) ----
@@ -250,6 +251,42 @@ function TreeItems({
   );
 }
 
+/**
+ * Sidebar navigation for the /help handbook: necronomidoc's own served
+ * documentation, grouped by the curated HELP_NAV sections. Decision pages
+ * highlight the register entry they're reached from.
+ */
+function HelpNav({ activeId }: { activeId: string }) {
+  return (
+    <>
+      <div className="text-xs text-base-content/60">
+        The manual for this necronomidoc server — not for the repos it documents.
+      </div>
+      <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">
+        {HELP_NAV.map((section) => (
+          <li key={section.title}>
+            <h2 className="menu-title">{section.title}</h2>
+            <ul>
+              {section.pages.map((p) => {
+                const active =
+                  p.id === activeId ||
+                  (p.id === "decisions/README" && activeId.startsWith("decisions/"));
+                return (
+                  <li key={p.id}>
+                    <Link to={helpHref(p.id)} className={active ? "menu-active" : ""}>
+                      {p.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function Sidebar({
   registry,
   model,
@@ -262,11 +299,29 @@ export function Sidebar({
   activePath?: string;
 }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const helpMatch = pathname === "/help" || pathname.startsWith("/help/");
   const tree = useMemo(() => (model ? buildTree(model.files) : undefined), [model]);
   const specFiles = useMemo(
     () => model?.files.filter((f) => f.format === "openapi") ?? [],
     [model],
   );
+  if (helpMatch) {
+    const activeId = pathname === "/help" ? "README" : pathname.slice("/help/".length);
+    return (
+      <nav className="flex min-h-full w-72 flex-col gap-3 bg-base-200 p-4">
+        <Link to="/" className="text-lg font-bold tracking-tight">
+          necronomidoc
+        </Link>
+        <HelpNav activeId={activeId} />
+        <div className="mt-auto flex flex-col gap-1 border-t border-base-300 pt-3">
+          <Link to="/" className="link-hover link text-sm text-base-content/60">
+            ← Documented repos
+          </Link>
+        </div>
+      </nav>
+    );
+  }
   return (
     <nav className="flex min-h-full w-72 flex-col gap-3 bg-base-200 p-4">
       <Link to="/" className="text-lg font-bold tracking-tight">
@@ -341,6 +396,9 @@ export function Sidebar({
         </Link>
         <Link to="/status" className="link-hover link text-sm text-base-content/60">
           Build status
+        </Link>
+        <Link to="/help" className="link-hover link text-sm text-base-content/60">
+          Necronomidoc docs
         </Link>
       </div>
     </nav>
