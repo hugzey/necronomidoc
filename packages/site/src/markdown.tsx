@@ -14,10 +14,28 @@ function textOf(node: ReactNode): string {
 }
 
 /**
+ * Load and initialize mermaid exactly once per page, memoized at module scope:
+ * the library is code-split (imported lazily so diagram-free pages never pay
+ * for it) and `initialize` runs a single time rather than once per diagram.
+ * `suppressErrorRendering` keeps a failed parse from injecting mermaid's error
+ * graphic into the document body — we show the source text instead.
+ */
+let mermaidPromise: Promise<typeof import("mermaid")["default"]> | undefined;
+function loadMermaid(): Promise<typeof import("mermaid")["default"]> {
+  return (mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      suppressErrorRendering: true,
+    });
+    return mermaid;
+  }));
+}
+
+/**
  * Render a ```mermaid code block as an inline SVG diagram (core docs carry
- * architecture diagrams — slice 7). The mermaid library is loaded lazily so
- * pages without diagrams never pay for it; on a render error the raw source
- * is shown instead so a bad diagram never blanks the page.
+ * architecture diagrams — slice 7). On a render error the raw source is shown
+ * instead so a bad diagram never blanks the page.
  */
 function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState<string>();
@@ -25,9 +43,8 @@ function MermaidBlock({ code }: { code: string }) {
   const reactId = useId();
   useEffect(() => {
     let live = true;
-    import("mermaid")
-      .then(async ({ default: mermaid }) => {
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+    loadMermaid()
+      .then(async (mermaid) => {
         // mermaid.render needs a DOM-safe unique element id.
         const id = `mermaid-${reactId.replace(/[^a-zA-Z0-9]/g, "")}`;
         const rendered = await mermaid.render(id, code);

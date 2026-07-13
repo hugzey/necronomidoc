@@ -12,6 +12,7 @@ import {
   AnthropicLlmClient,
   CORE_DOCS_SUBDIR,
   CORE_DOC_KINDS,
+  DEFAULT_MAX_TOKENS,
   LLM_CORE_DOCS_FILE,
   LLM_SUBSYSTEMS_FILE,
   generateCoreDocs,
@@ -200,10 +201,15 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
         written: 0,
         failures: [],
       };
-      // Respect the run's token budget: skip generation once the overlay
-      // writer already hit the cap (the next run picks the docs up).
-      if (!options.dryRun && plan.needed.length > 0 && !report.aborted) {
-        const generated = await generateCoreDocs(mergedView(), client, plan.needed);
+      // Core-doc calls draw from the same token budget the overlay writer
+      // used: pass the remaining allowance so generation stops at the cap
+      // instead of overshooting it (the leftover kinds regenerate next run).
+      const remainingTokens =
+        (options.maxTokens ?? DEFAULT_MAX_TOKENS) - (report.inputTokens + report.outputTokens);
+      if (!options.dryRun && plan.needed.length > 0 && remainingTokens > 0) {
+        const generated = await generateCoreDocs(mergedView(), client, plan.needed, {
+          maxTokens: remainingTokens,
+        });
         report.calls += generated.calls;
         report.inputTokens += generated.inputTokens;
         report.outputTokens += generated.outputTokens;

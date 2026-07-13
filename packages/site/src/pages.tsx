@@ -403,6 +403,14 @@ export function CoreDocView() {
           </p>
           <MarkdownDoc content={doc.content} slug={slug} path={`.necronomidoc/docs/${doc.kind}.md`} files={model?.files ?? []} />
         </>
+      ) : manifest ? (
+        // Manifest loaded fine — the URL just names a kind that isn't one of
+        // the four. Point back to the tabs rather than blaming the build.
+        <div className="alert alert-warning">
+          <span>
+            No <code>{kind}</code> document — pick one of the tabs above.
+          </span>
+        </div>
       ) : (
         <div className="alert alert-info">
           <span>
