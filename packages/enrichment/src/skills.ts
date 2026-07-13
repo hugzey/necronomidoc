@@ -9,6 +9,7 @@ import {
   type Subsystem,
 } from "@necronomidoc/docmodel";
 import type { LlmClient, LlmCompleteRequest } from "./llm/client.js";
+import { DEFAULT_AGENT_MODEL_LABEL, TaskRequest } from "./llm/tasks.js";
 
 /**
  * Skill generation (slice 8, decision 0017): the LLM turns documented
@@ -247,13 +248,6 @@ export async function generateSkillSet(
 
 export const SKILL_TASKS_FORMAT_VERSION = 1;
 
-const TaskRequest = z.object({
-  system: z.string().optional(),
-  prompt: z.string(),
-  maxOutputTokens: z.number().int().positive(),
-  jsonSchema: z.record(z.unknown()).optional(),
-});
-
 export const SkillTaskFile = z.object({
   formatVersion: z.literal(SKILL_TASKS_FORMAT_VERSION),
   kind: z.literal("skills"),
@@ -337,7 +331,7 @@ export function applySkillResults(
   }
   const applied: AppliedSkillResults = {
     skills: [],
-    model: resultsFile.model ?? "external-agent",
+    model: resultsFile.model ?? DEFAULT_AGENT_MODEL_LABEL,
     failures: [],
   };
   const result = resultsFile.results.find((r) => r.id === "skills");

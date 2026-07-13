@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ArtefactMode, GenerationScope } from "@necronomidoc/docmodel";
 import type { LlmClient, LlmCompleteRequest } from "./llm/client.js";
+import { DEFAULT_AGENT_MODEL_LABEL, TaskRequest } from "./llm/tasks.js";
 import { scopeContext, type ScopeInput } from "./skills.js";
 
 /**
@@ -66,14 +67,19 @@ export function parseTemplate(text: string): ParsedTemplate {
   const placeholders: TemplateSegment[] = [];
   let cursor = 0;
   let counter = 0;
-  MARKER_RE.lastIndex = 0;
-  for (const match of text.matchAll(MARKER_RE)) {
+  const re = new RegExp(MARKER_RE.source, "g");
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
     const [full, curly, diamond] = match;
     const instruction = curly !== undefined ? curly.trim() : diamond!.trim();
-    if (curly === undefined && !isDiamondPlaceholder(diamond!)) continue;
-    if (instruction.length === 0) continue;
-    if (match.index! > cursor) {
-      segments.push({ kind: "text", text: text.slice(cursor, match.index!) });
+    if ((curly === undefined && !isDiamondPlaceholder(diamond!)) || instruction.length === 0) {
+      // Rejected markup like `<a href="{{link}}">` may still contain a real
+      // marker — resume scanning just past the `<`, not past the whole match.
+      re.lastIndex = match.index + 1;
+      continue;
+    }
+    if (match.index > cursor) {
+      segments.push({ kind: "text", text: text.slice(cursor, match.index) });
     }
     const placeholder: TemplateSegment = {
       kind: "placeholder",
@@ -148,6 +154,7 @@ function surroundings(parsed: ParsedTemplate, id: string): { before: string; aft
 export function placeholderFillRequestFor(
   parsed: ParsedTemplate,
   placeholder: TemplateSegment,
+  templateText: string,
   docName: string,
   context: string,
 ): LlmCompleteRequest {
@@ -172,7 +179,7 @@ export function placeholderFillRequestFor(
     "",
     "Full template for context:",
     "```",
-    templateExcerpt(parsed.segments.map((s) => s.text).join("")),
+    templateExcerpt(templateText),
     "```",
     "",
     "Repository documentation:",
@@ -302,6 +309,30 @@ export function sectionFillRequestFor(
   return { system: ARTEFACT_SYSTEM_PROMPT, prompt, maxOutputTokens: 2500, jsonSchema: FILL_JSON_SCHEMA };
 }
 
+/**
+ * The fill tasks for a parsed template — ONE definition shared by the live
+ * runner and the agent task export, so both send identical prompts (the
+ * module's load-bearing invariant, cf. decision 0016).
+ */
+export function fillTasksFor(
+  parsed: ParsedTemplate,
+  sections: PlannedSection[] | undefined,
+  templateText: string,
+  docName: string,
+  context: string,
+): { id: string; request: LlmCompleteRequest }[] {
+  if (parsed.mode === "placeholders") {
+    return parsed.placeholders.slice(0, MAX_FILL_TASKS).map((p) => ({
+      id: p.id!,
+      request: placeholderFillRequestFor(parsed, p, templateText, docName, context),
+    }));
+  }
+  return (sections ?? []).map((s) => ({
+    id: s.id,
+    request: sectionFillRequestFor(s, templateText, docName, context),
+  }));
+}
+
 const FillResponse = z.object({ content: z.string() });
 
 /** Parse one fill response. Throws on malformed JSON. */
@@ -369,16 +400,7 @@ export async function generateArtefactFills(
     );
   }
 
-  const tasks =
-    parsed.mode === "placeholders"
-      ? parsed.placeholders.slice(0, MAX_FILL_TASKS).map((p) => ({
-          id: p.id!,
-          request: placeholderFillRequestFor(parsed, p, docName, context),
-        }))
-      : (sections ?? []).map((s) => ({
-          id: s.id,
-          request: sectionFillRequestFor(s, templateText, docName, context),
-        }));
+  const tasks = fillTasksFor(parsed, sections, templateText, docName, context);
 
   for (const task of tasks) {
     if (!budgetLeft()) {
@@ -407,13 +429,6 @@ export function assembleArtefactMarkdown(plan: ArtefactFillPlan, fills: Map<stri
 // ---- Agent-mode tasks (no API key; mirrors llm/tasks.ts, decision 0016) ----
 
 export const ARTEFACT_TASKS_FORMAT_VERSION = 1;
-
-const TaskRequest = z.object({
-  system: z.string().optional(),
-  prompt: z.string(),
-  maxOutputTokens: z.number().int().positive(),
-  jsonSchema: z.record(z.unknown()).optional(),
-});
 
 export const ArtefactTaskFile = z.object({
   formatVersion: z.literal(ARTEFACT_TASKS_FORMAT_VERSION),
@@ -490,16 +505,7 @@ export function buildArtefactTaskFile(
   const context = scopeContext(inputs);
   const parsed = parseTemplate(templateText);
   const sections = parsed.mode === "sections" ? headingSections(templateText) : undefined;
-  const tasks =
-    parsed.mode === "placeholders"
-      ? parsed.placeholders.slice(0, MAX_FILL_TASKS).map((p) => ({
-          id: p.id!,
-          request: placeholderFillRequestFor(parsed, p, options.name, context),
-        }))
-      : sections!.map((s) => ({
-          id: s.id,
-          request: sectionFillRequestFor(s, templateText, options.name, context),
-        }));
+  const tasks = fillTasksFor(parsed, sections, templateText, options.name, context);
   return {
     formatVersion: ARTEFACT_TASKS_FORMAT_VERSION,
     kind: "artefact",
@@ -540,7 +546,7 @@ export function applyArtefactResults(
   const tasksById = new Set(taskFile.tasks.map((t) => t.id));
   const applied: AppliedArtefactResults = {
     fills: new Map(),
-    model: resultsFile.model ?? "external-agent",
+    model: resultsFile.model ?? DEFAULT_AGENT_MODEL_LABEL,
     applied: 0,
     failures: [],
     unmatchedResults: [],

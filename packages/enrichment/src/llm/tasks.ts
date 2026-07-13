@@ -33,12 +33,18 @@ import {
  */
 export const ENRICH_TASKS_FORMAT_VERSION = 1;
 
-const TaskRequest = z.object({
+/**
+ * The serialized form of `LlmCompleteRequest` inside every agent task file
+ * (enrich, skills, artefacts) — one definition so a field added to the
+ * request type can't silently be stripped by one importer and not another.
+ */
+export const TaskRequest = z.object({
   system: z.string().optional(),
   prompt: z.string(),
   maxOutputTokens: z.number().int().positive(),
   jsonSchema: z.record(z.unknown()).optional(),
 });
+export type TaskRequest = z.infer<typeof TaskRequest>;
 
 const TargetMeta = z.object({
   fileId: z.string(),

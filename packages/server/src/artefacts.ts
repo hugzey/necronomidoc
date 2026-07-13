@@ -14,7 +14,6 @@ import {
   ArtefactTaskFile,
   applyArtefactResults,
   assembleArtefactMarkdown,
-  assembleFilledTemplate,
   buildArtefactTaskFile,
   extractDocxText,
   fillDocxPlaceholders,
@@ -25,7 +24,7 @@ import {
   type ParsedTemplate,
 } from "@necronomidoc/enrichment";
 import { llmClientFor, type LlmFlagOptions } from "./llm.js";
-import { resolveScope, type ScopeSelection } from "./scope.js";
+import { readJsonFile, resolveScope, type ScopeSelection } from "./scope.js";
 
 /**
  * The `necronomidoc artefact` pipeline (slice 8, decision 0018): fill a
@@ -110,10 +109,11 @@ function templateFromOptions(options: ArtefactOptions): { name: string; bytes: U
   return { name: basename(path), bytes: readFileSync(path) };
 }
 
-/** Filesystem-safe unique artefact id: template slug + UTC timestamp. */
+/** Filesystem-safe unique artefact id: template slug + UTC timestamp (ms). */
 function artefactIdFor(name: string, now: string): string {
   const stem = slugify(name.replace(/\.[a-z]+$/i, "")) || "artefact";
-  return `${stem}-${now.replace(/\D/g, "").slice(0, 14)}`;
+  // Millisecond precision so two runs of the same template can't collide.
+  return `${stem}-${now.replace(/\D/g, "").slice(0, 17)}`;
 }
 
 interface PersistArtefactInput {
@@ -217,10 +217,8 @@ export async function generateArtefact(options: ArtefactOptions): Promise<Artefa
   // Scope first: cheap local reads, and a bad selection reports precisely
   // even when no LLM credentials are configured.
   const { scope, inputs } = resolveScope(dataDir, options);
-  const template = await loadTemplate(
-    templateFromOptions(options).name,
-    templateFromOptions(options).bytes,
-  );
+  const { name, bytes } = templateFromOptions(options);
+  const template = await loadTemplate(name, bytes);
 
   const parsed = parseTemplate(template.text);
   if (options.dryRun) {
@@ -339,15 +337,6 @@ export interface ImportArtefactResultsResult {
   missingTasks: string[];
 }
 
-function readJsonFile(path: string, what: string): unknown {
-  const absolute = resolve(path);
-  try {
-    return JSON.parse(readFileSync(absolute, "utf8"));
-  } catch (err) {
-    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
-  }
-}
-
 /** Agent-mode step 2: validate the agent's fills, assemble, and persist. */
 export async function importArtefactResults(
   options: ImportArtefactResultsOptions,
@@ -375,13 +364,11 @@ export async function importArtefactResults(
   let output: PersistArtefactInput["output"];
   if (taskFile.mode === "placeholders" && taskFile.format === "docx") {
     output = { bytes: await filledDocx(templateBytes, parsed, applied.fills), ext: "docx" };
-  } else if (taskFile.mode === "placeholders") {
-    output = { bytes: Buffer.from(assembleFilledTemplate(parsed, applied.fills), "utf8"), ext: "md" };
   } else {
-    const parts = (taskFile.sections ?? [])
-      .map((s) => applied.fills.get(s.id))
-      .filter((c): c is string => c !== undefined && c.trim().length > 0);
-    output = { bytes: Buffer.from(`${parts.join("\n\n").trim()}\n`, "utf8"), ext: "md" };
+    // Same assembly path as a live run, so identical fills can never produce
+    // different documents depending on which pipeline ran.
+    const plan = { mode: taskFile.mode, parsed, sections: taskFile.sections };
+    output = { bytes: Buffer.from(assembleArtefactMarkdown(plan, applied.fills), "utf8"), ext: "md" };
   }
 
   const dataDir = resolve(options.dataDir);

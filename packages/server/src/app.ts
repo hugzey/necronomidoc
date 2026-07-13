@@ -421,7 +421,16 @@ export function createApp(config: NecronomidocConfig): App {
     return undefined;
   };
 
-  app.get("/api/skills", (c) => c.json(readSkillSetIndex(config.dataDir)));
+  // Index files re-read only when their mtime moves, like registry/status —
+  // the site polls these lists.
+  const cachedSkillIndex = mtimeCached(join(config.dataDir, "skills", "index.json"), () =>
+    readSkillSetIndex(config.dataDir),
+  );
+  const cachedArtefactIndex = mtimeCached(join(config.dataDir, "artefacts", "index.json"), () =>
+    readArtefactIndex(config.dataDir),
+  );
+
+  app.get("/api/skills", (c) => c.json(cachedSkillIndex()));
 
   app.get("/api/skills/:id", (c) => {
     const id = c.req.param("id");
@@ -465,7 +474,7 @@ export function createApp(config: NecronomidocConfig): App {
     }
   });
 
-  app.get("/api/artefacts", (c) => c.json(readArtefactIndex(config.dataDir)));
+  app.get("/api/artefacts", (c) => c.json(cachedArtefactIndex()));
 
   app.get("/api/artefacts/:id", (c) => {
     const id = c.req.param("id");

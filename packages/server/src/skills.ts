@@ -18,7 +18,7 @@ import {
 } from "@necronomidoc/enrichment";
 import type { LlmClient } from "@necronomidoc/enrichment";
 import { llmClientFor, type LlmFlagOptions } from "./llm.js";
-import { resolveScope, type ScopeSelection } from "./scope.js";
+import { readJsonFile, resolveScope, type ScopeSelection } from "./scope.js";
 
 /**
  * The `necronomidoc skills` pipeline (slice 8, decision 0017): resolve the
@@ -232,15 +232,6 @@ export interface ImportSkillResultsResult {
   setId: string;
   skillsWritten: number;
   failures: { id: string; error: string }[];
-}
-
-function readJsonFile(path: string, what: string): unknown {
-  const absolute = resolve(path);
-  try {
-    return JSON.parse(readFileSync(absolute, "utf8"));
-  } catch (err) {
-    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
-  }
 }
 
 /** Agent-mode step 2: validate the agent's results and persist the set. */

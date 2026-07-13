@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import {
   CoreDocsManifest,
   DocModel,
@@ -25,6 +26,17 @@ export interface ScopeSelection {
 
 /** A caller-fixable scope problem (unknown slug, empty selection/registry). */
 export class ScopeError extends Error {}
+
+/** Read + parse a caller-supplied JSON file with an actionable error. Shared
+ * by the enrich/skills/artefact import pipelines. */
+export function readJsonFile(path: string, what: string): unknown {
+  const absolute = resolvePath(path);
+  try {
+    return JSON.parse(readFileSync(absolute, "utf8"));
+  } catch (err) {
+    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
+  }
+}
 
 export interface ResolvedScope {
   scope: GenerationScope;

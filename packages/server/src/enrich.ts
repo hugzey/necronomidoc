@@ -38,6 +38,7 @@ import {
 } from "./build.js";
 import { fetchSource } from "./ingest/fetch.js";
 import { llmClientFor } from "./llm.js";
+import { readJsonFile } from "./scope.js";
 import { getSourceRepo } from "./ingest/registry.js";
 
 /**
@@ -369,15 +370,6 @@ export interface ImportResultsResult {
   unmatchedResults: string[];
   missingTasks: string[];
   published: boolean;
-}
-
-function readJsonFile(path: string, what: string): unknown {
-  const absolute = resolve(path);
-  try {
-    return JSON.parse(readFileSync(absolute, "utf8"));
-  } catch (err) {
-    throw new Error(`Cannot read ${what} ${absolute}: ${(err as Error).message}`);
-  }
 }
 
 /**

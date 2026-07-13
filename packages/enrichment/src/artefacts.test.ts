@@ -57,6 +57,16 @@ describe("parseTemplate", () => {
     expect(parsed.placeholders).toHaveLength(0);
   });
 
+  it("still finds a curly marker inside rejected markup", () => {
+    // The <a …> match is rejected as markup; the {{…}} inside it must not be
+    // swallowed with it.
+    const parsed = parseTemplate('See <a href="{{link to the docs}}">docs</a>.');
+    expect(parsed.placeholders.map((p) => p.instruction)).toEqual(["link to the docs"]);
+    expect(assembleFilledTemplate(parsed, new Map([["ph-1", "https://x"]]))).toBe(
+      'See <a href="https://x">docs</a>.',
+    );
+  });
+
   it("supports multi-line curly placeholders", () => {
     const parsed = parseTemplate("A {{write a table\nof endpoints}} B");
     expect(parsed.placeholders[0]!.instruction).toBe("write a table\nof endpoints");

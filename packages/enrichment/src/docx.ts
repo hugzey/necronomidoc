@@ -90,13 +90,15 @@ export async function fillDocxPlaceholders(
   replacements: Map<string, string>,
 ): Promise<Uint8Array> {
   const { zip, xml } = await documentXmlOf(docx);
+  const markers = [...replacements.keys()];
   const newXml = xml.replace(PARAGRAPH_RE, (paragraphXml) => {
     const original = paragraphText(paragraphXml);
+    // Most paragraphs carry no marker — skip the replacement loop for them.
+    if (!markers.some((marker) => original.includes(marker))) return paragraphXml;
     let replaced = original;
     for (const [marker, content] of replacements) {
       replaced = replaced.split(marker).join(content);
     }
-    if (replaced === original) return paragraphXml;
     return replaceParagraphText(paragraphXml, replaced);
   });
   zip.file(DOCUMENT_XML, newXml);
