@@ -46,8 +46,9 @@ export function loadOverlays(dirs: string[]): Map<string, Overlay> {
   const byId = new Map<string, Overlay>();
   for (const dir of dirs) {
     for (const file of walk(dir, [".json", ".yaml", ".yml"])) {
-      // Subsystem definitions share these dirs but are not per-target overlays.
-      if (/^subsystems[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
+      // Subsystem definitions and core-doc caches share these dirs but are
+      // not per-target overlays.
+      if (/^(subsystems|coredocs)[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
       for (const overlay of parseOverlayFile(file)) {
         const existing = byId.get(overlay.targetId);
         const keep =

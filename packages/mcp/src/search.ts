@@ -1,5 +1,6 @@
 import MiniSearch from "minisearch";
 import type {
+  CoreDocsManifest,
   DocModel,
   DocSymbolShape,
   SearchDoc,
@@ -20,9 +21,13 @@ export const SEARCH_OPTIONS = {
 
 /**
  * Flatten a merged DocModel into search corpus rows (files + symbols, plus
- * subsystem overviews when a manifest is provided — slice 3 §3).
+ * subsystem overviews and core docs when their manifests are provided).
  */
-export function buildCorpusDocs(model: DocModel, subsystems?: SubsystemsManifest): SearchDoc[] {
+export function buildCorpusDocs(
+  model: DocModel,
+  subsystems?: SubsystemsManifest,
+  coreDocs?: CoreDocsManifest,
+): SearchDoc[] {
   const docs: SearchDoc[] = [];
   const repo = model.repo.slug;
 
@@ -95,13 +100,32 @@ export function buildCorpusDocs(model: DocModel, subsystems?: SubsystemsManifest
         .join(" "),
     });
   }
+
+  for (const doc of coreDocs?.docs ?? []) {
+    docs.push({
+      id: `${repo}:coredoc:${doc.kind}`,
+      type: "coredoc",
+      repo,
+      // The canonical in-repo location, whichever tier actually won.
+      path: `.necronomidoc/docs/${doc.kind}.md`,
+      name: doc.title,
+      kind: doc.kind,
+      summary: `${doc.title} (core doc)`,
+      // Bounded like markdown bodies to keep the index proportionate.
+      text: [doc.kind, doc.title, doc.content.slice(0, 4000)].join(" "),
+    });
+  }
   return docs;
 }
 
 /** Build an in-memory MiniSearch index for a repo's corpus. */
-export function buildIndex(model: DocModel, subsystems?: SubsystemsManifest): MiniSearch<SearchDoc> {
+export function buildIndex(
+  model: DocModel,
+  subsystems?: SubsystemsManifest,
+  coreDocs?: CoreDocsManifest,
+): MiniSearch<SearchDoc> {
   const mini = new MiniSearch<SearchDoc>(SEARCH_OPTIONS);
-  mini.addAll(buildCorpusDocs(model, subsystems));
+  mini.addAll(buildCorpusDocs(model, subsystems, coreDocs));
   return mini;
 }
 

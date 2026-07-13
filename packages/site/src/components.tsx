@@ -24,6 +24,10 @@ const PROV_BADGE: Record<string, string> = {
   human: "badge-success",
   llm: "badge-warning",
   heuristic: "badge-ghost",
+  // Core-doc sources: a file shipped in the repo and a server-side override
+  // are both human-curated tiers.
+  repo: "badge-success",
+  override: "badge-info",
 };
 
 export function ProvenanceBadge({ provenance, stale }: { provenance?: string; stale?: boolean }) {
@@ -272,6 +276,25 @@ export function Sidebar({
           </option>
         ))}
       </select>
+      {slug && (
+        <div>
+          <div className="mb-1 text-xs font-medium uppercase text-base-content/50">Core docs</div>
+          <ul className="menu menu-sm w-full p-0">
+            {(
+              [
+                ["overview", "Overview"],
+                ["conventions", "Conventions"],
+                ["packages", "Packages"],
+                ["architecture", "Architecture"],
+              ] as const
+            ).map(([kind, label]) => (
+              <li key={kind}>
+                <Link to={`/r/${slug}/docs/${kind}`}>{label}</Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {slug && (
         <Link to={`/r/${slug}/subsystems`} className="link-hover link text-sm">
           Subsystems

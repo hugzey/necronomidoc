@@ -1,11 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { slugify, type AdapterConfig, type EnrichmentOverlay } from "@necronomidoc/docmodel";
+import {
+  slugify,
+  type AdapterConfig,
+  type CoreDocKind,
+  type DocModel,
+  type EnrichmentOverlay,
+  type LlmCoreDoc,
+} from "@necronomidoc/docmodel";
 import {
   AnthropicLlmClient,
+  CORE_DOCS_SUBDIR,
+  CORE_DOC_KINDS,
+  LLM_CORE_DOCS_FILE,
   LLM_SUBSYSTEMS_FILE,
+  generateCoreDocs,
+  loadLlmCoreDocs,
   loadOverlays,
   mergeEnrichment,
+  planCoreDocs,
   proposeSubsystems,
   renderStaleReview,
   runLlmEnrichment,
@@ -41,8 +54,26 @@ export interface EnrichOptions {
   dryRun?: boolean;
   /** Also ask the LLM to propose a subsystem map (reviewed, provenance llm). */
   subsystems?: boolean;
+  /**
+   * Generate the four core docs (overview/conventions/packages/architecture)
+   * for every kind not covered by a repo file or server override, cached
+   * against the repo hash. Default true; `--no-core-docs` disables.
+   */
+  coreDocs?: boolean;
   /** Injected client (tests); defaults to the Anthropic API. */
   client?: LlmClient;
+}
+
+/** What the core-docs step of an enrich run did (or would do, on dry runs). */
+export interface CoreDocsRunSummary {
+  /** Kinds the LLM should write: not curated, no fresh cache entry. */
+  planned: CoreDocKind[];
+  /** Kinds owned by a repo file or server override (never LLM-written). */
+  curated: number;
+  /** Kinds whose cached LLM doc still matches the repo hash. */
+  fresh: number;
+  written: number;
+  failures: { kind: CoreDocKind; error: string }[];
 }
 
 export interface EnrichResult {
@@ -50,6 +81,8 @@ export interface EnrichResult {
   report: EnrichmentRunReport;
   /** Set when `--subsystems` proposed a map. */
   subsystemsProposed?: number;
+  /** Set unless core docs were disabled for the run. */
+  coreDocs?: CoreDocsRunSummary;
   published: boolean;
 }
 
@@ -64,6 +97,20 @@ async function materializeEnrichTarget(
   }
   const mat = materializeTarget(options.target, options.ref);
   return { ...mat, name: options.name ?? slugify(mat.repoUrl ?? mat.repoDir) };
+}
+
+/** Merge newly generated core docs into the server-side cache, keyed by kind. */
+function persistLlmCoreDocs(enrichmentDir: string, docs: LlmCoreDoc[]): void {
+  mkdirSync(enrichmentDir, { recursive: true });
+  const byKind = new Map(loadLlmCoreDocs(enrichmentDir).map((d) => [d.kind, d]));
+  for (const doc of docs) byKind.set(doc.kind, doc);
+  const ordered = CORE_DOC_KINDS.map((kind) => byKind.get(kind)).filter(
+    (d): d is LlmCoreDoc => d !== undefined,
+  );
+  writeFileSync(
+    join(enrichmentDir, LLM_CORE_DOCS_FILE),
+    JSON.stringify(ordered, null, 2) + "\n",
+  );
 }
 
 /** Merge new llm overlays into the server-side per-repo `llm.json`. */
@@ -116,13 +163,18 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       dryRun: options.dryRun,
     });
 
+    // Merged view (fresh overlays included) so file summaries inform the
+    // subsystem map and core docs; computed at most once per run.
+    let mergedCache: DocModel | undefined;
+    const mergedView = (): DocModel =>
+      (mergedCache ??= mergeEnrichment(model, {
+        overlays: new Map([...overlays, ...newOverlays.map((o) => [o.targetId, o] as const)]),
+      }));
+
     let subsystemsProposed: number | undefined;
     if (options.subsystems && !options.dryRun) {
       // Propose from the merged view so file summaries inform the map.
-      const merged = mergeEnrichment(model, {
-        overlays: new Map([...overlays, ...newOverlays.map((o) => [o.targetId, o] as const)]),
-      });
-      const proposal = await proposeSubsystems(merged, client);
+      const proposal = await proposeSubsystems(mergedView(), client);
       report.calls++;
       report.inputTokens += proposal.inputTokens;
       report.outputTokens += proposal.outputTokens;
@@ -134,6 +186,33 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       subsystemsProposed = proposal.subsystems.length;
     }
 
+    let coreDocs: CoreDocsRunSummary | undefined;
+    if (options.coreDocs !== false) {
+      const plan = planCoreDocs(model, {
+        repoDocsDir: join(repoDir, ".necronomidoc", CORE_DOCS_SUBDIR),
+        overrideDir: join(enrichmentDir, CORE_DOCS_SUBDIR),
+        llmDir: enrichmentDir,
+      });
+      coreDocs = {
+        planned: plan.needed,
+        curated: plan.curated.length,
+        fresh: plan.fresh.length,
+        written: 0,
+        failures: [],
+      };
+      // Respect the run's token budget: skip generation once the overlay
+      // writer already hit the cap (the next run picks the docs up).
+      if (!options.dryRun && plan.needed.length > 0 && !report.aborted) {
+        const generated = await generateCoreDocs(mergedView(), client, plan.needed);
+        report.calls += generated.calls;
+        report.inputTokens += generated.inputTokens;
+        report.outputTokens += generated.outputTokens;
+        coreDocs.written = generated.docs.length;
+        coreDocs.failures = generated.failures;
+        if (generated.docs.length > 0) persistLlmCoreDocs(enrichmentDir, generated.docs);
+      }
+    }
+
     let published = false;
     if (!options.dryRun) {
       if (newOverlays.length > 0) persistLlmOverlays(enrichmentDir, newOverlays);
@@ -142,7 +221,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       published = true;
     }
 
-    return { slug, report, subsystemsProposed, published };
+    return { slug, report, subsystemsProposed, coreDocs, published };
   } finally {
     cleanup?.();
   }

@@ -17,6 +17,8 @@ import {
   type RegistryEntry,
 } from "@necronomidoc/docmodel";
 import {
+  CORE_DOCS_SUBDIR,
+  buildCoreDocs,
   buildSubsystems,
   computeEnrichmentReport,
   mergeEnrichment,
@@ -165,9 +167,14 @@ export function publishModel(
     humanDirs: repoDir ? [join(repoDir, ".necronomidoc"), serverEnrichmentDir] : [serverEnrichmentDir],
     llmDir: serverEnrichmentDir,
   });
+  const coreDocs = buildCoreDocs(merged, {
+    repoDocsDir: repoDir ? join(repoDir, ".necronomidoc", CORE_DOCS_SUBDIR) : undefined,
+    overrideDir: join(serverEnrichmentDir, CORE_DOCS_SUBDIR),
+    llmDir: serverEnrichmentDir,
+  });
   const report = computeEnrichmentReport(merged);
 
-  publishAtomically(dataDir, merged, { subsystems, enrichmentReport: report });
+  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report });
   const entry = registryEntryFor(merged, report);
   upsertRegistry(dataDir, entry);
   return { model: merged, entry };

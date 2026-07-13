@@ -78,7 +78,10 @@ function firstParagraph(lines: string[], from: number, to: number): string | und
 
 function sweep(dir: string, rel = "", out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") && entry.name !== ".necronomidoc") continue;
+    // All dot-dirs are skipped, including .necronomidoc: its markdown (core
+    // docs under .necronomidoc/docs/) is curation input published through the
+    // core-docs pipeline, not repo content to document twice.
+    if (entry.name.startsWith(".")) continue;
     const abs = join(dir, entry.name);
     const relPath = rel ? `${rel}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {

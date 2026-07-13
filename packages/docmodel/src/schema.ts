@@ -220,6 +220,55 @@ export const SubsystemsManifest = z.object({
 });
 export type SubsystemsManifest = z.infer<typeof SubsystemsManifest>;
 
+// ---- Core docs (slice 7) ----
+
+/** The four core documents every repo publishes. */
+export const CoreDocKind = z.enum(["overview", "conventions", "packages", "architecture"]);
+export type CoreDocKind = z.infer<typeof CoreDocKind>;
+
+/**
+ * Where a core doc came from, in precedence order (repo wins): a file the
+ * source repo ships (`.necronomidoc/docs/<kind>.md`), a server-side override
+ * (`data/enrichment/<slug>/docs/<kind>.md`), the LLM writer, or the
+ * always-present heuristic floor derived from the extracted model.
+ */
+export const CoreDocProvenance = z.enum(["repo", "override", "llm", "heuristic"]);
+export type CoreDocProvenance = z.infer<typeof CoreDocProvenance>;
+
+/** One resolved core document (markdown body, highest-precedence source). */
+export const CoreDoc = z.object({
+  kind: CoreDocKind,
+  title: z.string(),
+  /** Markdown. The architecture doc carries a mermaid or ASCII diagram. */
+  content: z.string(),
+  provenance: CoreDocProvenance,
+  /** True when the repo's code changed since this (llm) doc was written. */
+  stale: z.boolean().default(false),
+  updatedAt: z.string().optional(),
+});
+export type CoreDoc = z.infer<typeof CoreDoc>;
+
+/** The per-repo core docs manifest, published next to the doc model. */
+export const CoreDocsManifest = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  repo: z.string(),
+  docs: z.array(CoreDoc).default([]),
+  generatedAt: z.string().optional(),
+});
+export type CoreDocsManifest = z.infer<typeof CoreDocsManifest>;
+
+/** An LLM-written core doc cached server-side, keyed to the repo hash. */
+export const LlmCoreDoc = z.object({
+  kind: CoreDocKind,
+  title: z.string(),
+  content: z.string(),
+  /** `repoContentHash` of the model this doc was written from (staleness). */
+  sourceRepoHash: z.string(),
+  model: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type LlmCoreDoc = z.infer<typeof LlmCoreDoc>;
+
 // ---- Enrichment/staleness report (slice 3) ----
 
 /** One stale overlay flagged in a build's enrichment report. */
@@ -284,7 +333,7 @@ export type Registry = z.infer<typeof Registry>;
 /** One row in the serialized search corpus. */
 export const SearchDoc = z.object({
   id: z.string(),
-  type: z.enum(["file", "symbol", "subsystem"]),
+  type: z.enum(["file", "symbol", "subsystem", "coredoc"]),
   repo: z.string(),
   path: z.string(),
   name: z.string(),

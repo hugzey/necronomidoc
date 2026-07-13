@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type MiniSearch from "minisearch";
 import {
+  CoreDocsManifest,
   DocModel,
   SubsystemsManifest,
   fileIdOfSymbol,
@@ -17,6 +18,7 @@ interface LoadedRepo {
   model: DocModel;
   index: MiniSearch<SearchDoc>;
   subsystems?: SubsystemsManifest;
+  coreDocs?: CoreDocsManifest;
   /** file id -> file, symbol id -> symbol, for O(1) lookups. */
   filesById: Map<string, DocFile>;
   filesByPath: Map<string, DocFile>;
@@ -63,6 +65,14 @@ export class ManifestStore {
           );
           if (parsed.success) subsystems = parsed.data;
         }
+        const coreDocsPath = paths.coreDocs(repoDir);
+        let coreDocs: CoreDocsManifest | undefined;
+        if (existsSync(coreDocsPath)) {
+          const parsed = CoreDocsManifest.safeParse(
+            JSON.parse(readFileSync(coreDocsPath, "utf8")),
+          );
+          if (parsed.success) coreDocs = parsed.data;
+        }
         const filesById = new Map<string, DocFile>();
         const filesByPath = new Map<string, DocFile>();
         const symbolsById = new Map<string, DocSymbolShape>();
@@ -82,6 +92,7 @@ export class ManifestStore {
           model,
           index,
           subsystems,
+          coreDocs,
           filesById,
           filesByPath,
           symbolsById,
@@ -162,5 +173,10 @@ export class ManifestStore {
   /** The repo's curated/heuristic subsystem map, if it was published. */
   getSubsystems(slug: string): SubsystemsManifest | undefined {
     return this.repos.get(slug)?.subsystems;
+  }
+
+  /** The repo's resolved core docs manifest, if it was published. */
+  getCoreDocs(slug: string): CoreDocsManifest | undefined {
+    return this.repos.get(slug)?.coreDocs;
   }
 }
