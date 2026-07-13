@@ -9,9 +9,9 @@ function jsonContent(result: ToolResult) {
 }
 
 /**
- * Build a fresh MCP server exposing the six documentation tools over the given
- * manifest store (decision 0008). All tools are read-only and answer from the
- * in-memory store — no side effects, safe to instantiate per request.
+ * Build a fresh MCP server exposing the seven documentation tools over the
+ * given manifest store (decision 0008). All tools are read-only and answer
+ * from the in-memory store — no side effects, safe to instantiate per request.
  */
 export function createMcpServer(store: ManifestStore): McpServer {
   const server = new McpServer(
@@ -68,6 +68,21 @@ export function createMcpServer(store: ManifestStore): McpServer {
       },
     },
     async (args) => jsonContent(tools.get_function_doc(store, args)),
+  );
+
+  server.registerTool(
+    "get_core_doc",
+    {
+      description:
+        "Get one of a repo's four core documents: 'overview' (what the project is and does), 'conventions' (style and patterns to follow), 'packages' (third-party dependencies — why, how, where), or 'architecture' (high-level layout with a mermaid/ASCII diagram). Call this before writing code in an unfamiliar repo. Provenance tells you the source: repo (shipped with the code), override (server-side curation), llm, or heuristic; treat `stale: true` as possibly outdated.",
+      inputSchema: {
+        repo: z.string().describe("Repo slug."),
+        doc: z
+          .enum(["overview", "conventions", "packages", "architecture"])
+          .describe("Which core document to fetch."),
+      },
+    },
+    async (args) => jsonContent(tools.get_core_doc(store, args)),
   );
 
   server.registerTool(

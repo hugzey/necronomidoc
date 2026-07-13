@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DocModel, SubsystemsManifest, type EnrichmentOverlay } from "@necronomidoc/docmodel";
+import {
+  CoreDocsManifest,
+  DocModel,
+  SubsystemsManifest,
+  type EnrichmentOverlay,
+} from "@necronomidoc/docmodel";
 import type { LlmClient, LlmCompleteRequest } from "@necronomidoc/enrichment";
 import { ManifestStore, paths, readRegistry, tools } from "@necronomidoc/mcp";
 import { enrichRepo, reviewStale } from "./enrich.js";
@@ -17,6 +22,19 @@ function fakeClient(): LlmClient & { calls: LlmCompleteRequest[] } {
     calls,
     async complete(request) {
       calls.push(request);
+      // Core-doc requests ask for {title, content}; overlay requests for
+      // {file, symbols}. Tell them apart by the requested schema.
+      const schema = request.jsonSchema as { properties?: Record<string, unknown> } | undefined;
+      if (schema?.properties && "title" in schema.properties) {
+        return {
+          text: JSON.stringify({
+            title: "Generated core doc",
+            content: "# Generated core doc\n\n```mermaid\ngraph LR\n  a --> b\n```\n\nLLM-written body.",
+          }),
+          inputTokens: 100,
+          outputTokens: 40,
+        };
+      }
       const ids = [...request.prompt.matchAll(/- id: (\S+)/g)].map((m) => m[1]!);
       return {
         text: JSON.stringify({
@@ -80,6 +98,40 @@ describe("enrich pipeline over the sample fixture", () => {
     const result = await enrichRepo({ dataDir, target: fixture, client });
     expect(client.calls.length).toBe(0);
     expect(result.report.skippedFresh).toBeGreaterThan(0);
+    // Core docs are hash-cached too: nothing to write on an unchanged repo.
+    expect(result.coreDocs!.planned).toEqual([]);
+    expect(result.coreDocs!.fresh).toBe(3);
+  });
+
+  it("publishes core docs with per-doc precedence: repo file wins, llm fills the gaps", () => {
+    const manifest = CoreDocsManifest.parse(
+      JSON.parse(readFileSync(paths.coreDocs(paths.repoDir(dataDir, "sample-react-app")), "utf8")),
+    );
+    const byKind = new Map(manifest.docs.map((d) => [d.kind, d]));
+    expect(manifest.docs).toHaveLength(4);
+
+    // The fixture ships .necronomidoc/docs/architecture.md — repo tier wins.
+    expect(byKind.get("architecture")!.provenance).toBe("repo");
+    expect(byKind.get("architecture")!.content).toContain("```mermaid");
+
+    // The other three had no curated source, so the enrich run wrote them.
+    for (const kind of ["overview", "conventions", "packages"] as const) {
+      expect(byKind.get(kind)!.provenance, kind).toBe("llm");
+      expect(byKind.get(kind)!.stale, kind).toBe(false);
+    }
+
+    // Served over MCP with provenance, and indexed by search.
+    const store = new ManifestStore(dataDir);
+    store.reload();
+    const doc = tools.get_core_doc(store, { repo: "sample-react-app", doc: "architecture" });
+    expect(doc["provenance"]).toBe("repo");
+    expect(String(doc["content"])).toContain("graph TD");
+    const hits = (
+      tools.search_docs(store, { query: "sample app architecture" }) as {
+        hits: { id: string }[];
+      }
+    ).hits;
+    expect(hits.some((h) => h.id.includes(":coredoc:"))).toBe(true);
   });
 
   it("publishes the human-curated subsystem map and serves boundaries over MCP", () => {
@@ -139,6 +191,7 @@ describe("enrich pipeline over the sample fixture", () => {
       expect(client.calls.length).toBe(0);
       expect(result.published).toBe(false);
       expect(result.report.plannedFiles).toBeGreaterThan(0);
+      expect(result.coreDocs!.planned).toEqual(["overview", "conventions", "packages"]);
       expect(existsSync(paths.repoDir(scratch, "sample-react-app"))).toBe(false);
     } finally {
       rmSync(scratch, { recursive: true, force: true });

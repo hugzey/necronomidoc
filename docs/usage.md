@@ -42,6 +42,12 @@ body.
 
 Flags: `--name <n>`, `--ref <git-ref>`, `--data-dir <dir>`.
 
+Every build also publishes the repo's four **core docs** — overview,
+conventions, packages, architecture (with a mermaid diagram) — resolved by
+precedence: a file the repo ships at `.necronomidoc/docs/<kind>.md` > a
+server-side override > LLM-generated (via `enrich`) > an always-present
+heuristic floor. See [core-docs.md](core-docs.md).
+
 ## OpenAPI specs → interactive API reference (slice 4)
 
 Any OpenAPI 3.x spec in the repo (`openapi.yaml`, `api/spec.json`, … — found
@@ -163,10 +169,12 @@ claude mcp add --transport http necronomidoc http://localhost:4319/mcp
 
 (Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
 tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
-`get_subsystem_overview`, `list_files`. Every response carries provenance
-(`human` / `llm` / `heuristic`) and a `stale` flag; `get_subsystem_overview`
-serves curated boundaries ("owns X / does not own Y") when a subsystem map
-exists (see [enrichment.md](enrichment.md)).
+`get_core_doc`, `get_subsystem_overview`, `list_files`. Every response carries
+provenance and a `stale` flag; `get_core_doc` serves the repo's overview /
+conventions / packages / architecture documents (see
+[core-docs.md](core-docs.md)), and `get_subsystem_overview` serves curated
+boundaries ("owns X / does not own Y") when a subsystem map exists (see
+[enrichment.md](enrichment.md)).
 
 Try asking your agent: *"what is `src/hooks/useCounter.ts` for?"*, *"is there
 an existing function that formats currency?"*, or *"where does counter state
@@ -215,10 +223,11 @@ node packages/cli/dist/index.js enrich fixtures/sample-react-app             # w
 ```
 
 Re-runs are free on unchanged code (content-hash cache), human overlays are
-never touched, and `--max-files` / `--max-tokens` cap every run. Add
-`--subsystems` to have the model propose a reviewed subsystem map, and
-`--review-stale` to list human overlays whose code has changed. Full guide:
-[enrichment.md](enrichment.md).
+never touched, and `--max-files` / `--max-tokens` cap every run. The same run
+generates any [core docs](core-docs.md) the repo hasn't curated
+(`--no-core-docs` opts out). Add `--subsystems` to have the model propose a
+reviewed subsystem map, and `--review-stale` to list human overlays whose
+code has changed. Full guide: [enrichment.md](enrichment.md).
 
 ## Add human enrichment overlays
 

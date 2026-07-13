@@ -168,6 +168,30 @@ export const tools = {
     };
   },
 
+  get_core_doc(store: ManifestStore, args: { repo: string; doc: string }): ToolResult {
+    const manifest = store.getCoreDocs(args.repo);
+    if (!manifest) return { error: `No core docs published for repo "${args.repo}" — rebuild it.` };
+    const doc = manifest.docs.find((d) => d.kind === args.doc);
+    if (!doc) {
+      return {
+        error: `Unknown core doc "${args.doc}" — one of: ${manifest.docs.map((d) => d.kind).join(", ")}.`,
+      };
+    }
+    const CORE_DOC_MAX = 12_000;
+    return {
+      repo: args.repo,
+      doc: doc.kind,
+      title: doc.title,
+      provenance: doc.provenance,
+      stale: doc.stale,
+      updatedAt: doc.updatedAt,
+      content:
+        doc.content.length > CORE_DOC_MAX
+          ? `${doc.content.slice(0, CORE_DOC_MAX)}\n…(truncated)`
+          : doc.content,
+    };
+  },
+
   get_subsystem_overview(
     store: ManifestStore,
     args: { repo: string; dir?: string },

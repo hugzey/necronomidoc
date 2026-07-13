@@ -1,4 +1,7 @@
 import type {
+  CoreDoc,
+  CoreDocKind,
+  CoreDocsManifest,
   DocFile,
   DocModel,
   DocSymbolShape,
@@ -8,7 +11,17 @@ import type {
   SubsystemsManifest,
 } from "@necronomidoc/docmodel";
 
-export type { DocFile, DocModel, DocSymbolShape, Registry, Subsystem, SubsystemsManifest };
+export type {
+  CoreDoc,
+  CoreDocKind,
+  CoreDocsManifest,
+  DocFile,
+  DocModel,
+  DocSymbolShape,
+  Registry,
+  Subsystem,
+  SubsystemsManifest,
+};
 
 /**
  * Static-export mode: a build script can inline the manifests as a global so
@@ -58,6 +71,18 @@ export async function fetchSubsystems(slug: string): Promise<SubsystemsManifest 
   const res = await fetch(`/data/repos/${slug}/subsystems.json`);
   if (!res.ok) return undefined;
   return (await res.json()) as SubsystemsManifest;
+}
+
+/**
+ * The repo's core docs manifest (slice 7). Unavailable in static-export mode
+ * and for repos built before slice 7 — both return undefined so the page can
+ * degrade gracefully.
+ */
+export async function fetchCoreDocs(slug: string): Promise<CoreDocsManifest | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch(`/data/repos/${slug}/coredocs.json`);
+  if (!res.ok) return undefined;
+  return (await res.json()) as CoreDocsManifest;
 }
 
 // ---- Ingestion status (slice 2) ----

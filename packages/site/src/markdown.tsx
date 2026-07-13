@@ -1,4 +1,4 @@
-import { isValidElement, type ReactNode } from "react";
+import { isValidElement, useEffect, useId, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { Link } from "react-router-dom";
 import type { DocFile } from "./api.js";
@@ -11,6 +11,70 @@ function textOf(node: ReactNode): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   if (isValidElement<{ children?: ReactNode }>(node)) return textOf(node.props.children);
   return "";
+}
+
+/**
+ * Load and initialize mermaid exactly once per page, memoized at module scope:
+ * the library is code-split (imported lazily so diagram-free pages never pay
+ * for it) and `initialize` runs a single time rather than once per diagram.
+ * `suppressErrorRendering` keeps a failed parse from injecting mermaid's error
+ * graphic into the document body — we show the source text instead.
+ */
+let mermaidPromise: Promise<typeof import("mermaid")["default"]> | undefined;
+function loadMermaid(): Promise<typeof import("mermaid")["default"]> {
+  return (mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      suppressErrorRendering: true,
+    });
+    return mermaid;
+  }));
+}
+
+/**
+ * Render a ```mermaid code block as an inline SVG diagram (core docs carry
+ * architecture diagrams — slice 7). On a render error the raw source is shown
+ * instead so a bad diagram never blanks the page.
+ */
+function MermaidBlock({ code }: { code: string }) {
+  const [svg, setSvg] = useState<string>();
+  const [error, setError] = useState<string>();
+  const reactId = useId();
+  useEffect(() => {
+    let live = true;
+    loadMermaid()
+      .then(async (mermaid) => {
+        // mermaid.render needs a DOM-safe unique element id.
+        const id = `mermaid-${reactId.replace(/[^a-zA-Z0-9]/g, "")}`;
+        const rendered = await mermaid.render(id, code);
+        if (live) setSvg(rendered.svg);
+      })
+      .catch((err: unknown) => {
+        if (live) setError(String(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, [code, reactId]);
+
+  if (error) {
+    return (
+      <pre title={error}>
+        <code>{code}</code>
+      </pre>
+    );
+  }
+  if (!svg) {
+    return (
+      <div className="flex justify-center p-4">
+        <span className="loading loading-dots loading-sm" aria-label="Rendering diagram" />
+      </div>
+    );
+  }
+  // Mermaid output is library-generated SVG (securityLevel: strict), not
+  // arbitrary document HTML.
+  return <div className="not-prose overflow-x-auto" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 /**
@@ -56,6 +120,16 @@ export function MarkdownDoc({
           {children}
         </a>
       );
+    },
+    pre: ({ children }) => {
+      const child = Array.isArray(children) ? children[0] : children;
+      if (
+        isValidElement<{ className?: string; children?: ReactNode }>(child) &&
+        /language-mermaid/.test(child.props.className ?? "")
+      ) {
+        return <MermaidBlock code={textOf(child.props.children).trim()} />;
+      }
+      return <pre>{children}</pre>;
     },
     img: ({ src, alt }) => {
       // Repo-relative images aren't served by the doc site; show a placeholder.

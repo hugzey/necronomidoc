@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DocFile } from "@necronomidoc/docmodel";
+import type { CoreDocsManifest, DocFile } from "@necronomidoc/docmodel";
 import type { ManifestStore } from "./store.js";
 import { tools } from "./tools.js";
 
@@ -32,9 +32,24 @@ const specFile: DocFile = {
   ],
 };
 
+const coreDocs: CoreDocsManifest = {
+  schemaVersion: 1,
+  repo: "api",
+  docs: [
+    {
+      kind: "architecture",
+      title: "Architecture",
+      content: "# Architecture\n\n```mermaid\ngraph LR\n  a --> b\n```",
+      provenance: "repo",
+      stale: false,
+    },
+  ],
+};
+
 const store = {
   getFile: (repo: string, path: string) =>
     repo === "api" && path === "openapi.yaml" ? specFile : undefined,
+  getCoreDocs: (repo: string) => (repo === "api" ? coreDocs : undefined),
 } as unknown as ManifestStore;
 
 describe("get_file_doc on an OpenAPI spec", () => {
@@ -49,5 +64,25 @@ describe("get_file_doc on an OpenAPI spec", () => {
     expect(result["content"]).toBeUndefined();
     expect(result["symbols"]).toBeUndefined();
     expect(result["endpointsTruncated"]).toBeUndefined();
+  });
+});
+
+describe("get_core_doc", () => {
+  it("returns the resolved doc with provenance", () => {
+    const result = tools.get_core_doc(store, { repo: "api", doc: "architecture" });
+    expect(result["title"]).toBe("Architecture");
+    expect(result["provenance"]).toBe("repo");
+    expect(result["stale"]).toBe(false);
+    expect(String(result["content"])).toContain("```mermaid");
+  });
+
+  it("names the valid kinds on a bad doc argument", () => {
+    const result = tools.get_core_doc(store, { repo: "api", doc: "roadmap" });
+    expect(String(result["error"])).toContain("architecture");
+  });
+
+  it("errors on an unknown repo", () => {
+    const result = tools.get_core_doc(store, { repo: "nope", doc: "overview" });
+    expect(result["error"]).toBeDefined();
   });
 });

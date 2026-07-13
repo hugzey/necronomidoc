@@ -60,7 +60,7 @@ const USAGE = `necronomidoc — team documentation server
 Usage:
   necronomidoc build <path-or-git-url> [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc enrich <repo-id-or-path-or-url> [--dry-run] [--max-files <n>]
-                 [--max-tokens <n>] [--model <id>] [--subsystems]
+                 [--max-tokens <n>] [--model <id>] [--subsystems] [--no-core-docs]
                  [--review-stale] [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
@@ -146,6 +146,7 @@ async function cmdEnrich(flags: Flags): Promise<number> {
     maxTokens: int(flags, "max-tokens"),
     dryRun,
     subsystems: flags["subsystems"] === true,
+    coreDocs: flags["no-core-docs"] === true ? false : undefined,
   });
 
   const r = result.report;
@@ -154,6 +155,12 @@ async function cmdEnrich(flags: Flags): Promise<number> {
     console.log(
       `  would summarize ${r.plannedFiles} files (${r.plannedFileSummaries} file + ${r.plannedSymbolSummaries} symbol summaries)`,
     );
+    if (result.coreDocs) {
+      console.log(
+        `  would generate core docs: ${result.coreDocs.planned.join(", ") || "none"}` +
+          ` (${result.coreDocs.curated} curated, ${result.coreDocs.fresh} cached)`,
+      );
+    }
   } else {
     console.log(`✓ enriched ${result.slug} with ${r.model}`);
     console.log(
@@ -163,6 +170,15 @@ async function cmdEnrich(flags: Flags): Promise<number> {
       console.log(
         `  proposed ${result.subsystemsProposed} subsystems (review data/enrichment/${result.slug}/subsystems.llm.json; promote to subsystems.yaml when happy)`,
       );
+    }
+    if (result.coreDocs) {
+      console.log(
+        `  core docs: ${result.coreDocs.written} written` +
+          ` (${result.coreDocs.curated} curated, ${result.coreDocs.fresh} cached)`,
+      );
+      for (const failure of result.coreDocs.failures) {
+        console.warn(`  ✗ core doc ${failure.kind}: ${failure.error}`);
+      }
     }
   }
   console.log(

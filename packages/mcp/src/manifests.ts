@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   Registry,
   SCHEMA_VERSION,
+  type CoreDocsManifest,
   type DocModel,
   type DocSymbolShape,
   type EnrichmentReport,
@@ -19,6 +20,7 @@ export const paths = {
   searchIndex: (repoDir: string) => join(repoDir, "search.json"),
   llmsTxt: (repoDir: string) => join(repoDir, "llms.txt"),
   subsystems: (repoDir: string) => join(repoDir, "subsystems.json"),
+  coreDocs: (repoDir: string) => join(repoDir, "coredocs.json"),
   enrichmentReport: (repoDir: string) => join(repoDir, "enrichment-report.json"),
 };
 
@@ -47,9 +49,21 @@ export function registryEntryFor(model: DocModel, report?: EnrichmentReport): Re
   };
 }
 
+/** Keeps one runaway core doc from dominating the llms.txt fallback. */
+const LLMS_TXT_DOC_MAX = 6000;
+
 /** Render a `llms.txt` overview — a zero-server fallback for non-MCP agents. */
-export function renderLlmsTxt(model: DocModel): string {
+export function renderLlmsTxt(model: DocModel, coreDocs?: CoreDocsManifest): string {
   const lines: string[] = [`# ${model.repo.name}`, ""];
+  for (const doc of coreDocs?.docs ?? []) {
+    lines.push(`## ${doc.title} [${doc.kind}] (source: ${doc.provenance}${doc.stale ? ", may be outdated" : ""})`);
+    lines.push(
+      doc.content.length > LLMS_TXT_DOC_MAX
+        ? `${doc.content.slice(0, LLMS_TXT_DOC_MAX)}\n…(truncated)`
+        : doc.content,
+    );
+    lines.push("");
+  }
   for (const file of model.files) {
     const purpose = file.enrichment?.summary ?? "";
     lines.push(`## ${file.path}`);
@@ -65,6 +79,7 @@ export function renderLlmsTxt(model: DocModel): string {
 
 export interface RepoManifestExtras {
   subsystems?: SubsystemsManifest;
+  coreDocs?: CoreDocsManifest;
   enrichmentReport?: EnrichmentReport;
 }
 
@@ -83,11 +98,14 @@ export function writeRepoManifests(
   writeFileSync(paths.docmodel(repoDir), JSON.stringify(model, null, 2));
   writeFileSync(
     paths.searchIndex(repoDir),
-    serializeIndex(buildIndex(model, extras.subsystems)),
+    serializeIndex(buildIndex(model, extras.subsystems, extras.coreDocs)),
   );
-  writeFileSync(paths.llmsTxt(repoDir), renderLlmsTxt(model));
+  writeFileSync(paths.llmsTxt(repoDir), renderLlmsTxt(model, extras.coreDocs));
   if (extras.subsystems) {
     writeFileSync(paths.subsystems(repoDir), JSON.stringify(extras.subsystems, null, 2));
+  }
+  if (extras.coreDocs) {
+    writeFileSync(paths.coreDocs(repoDir), JSON.stringify(extras.coreDocs, null, 2));
   }
   if (extras.enrichmentReport) {
     writeFileSync(

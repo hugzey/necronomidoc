@@ -33,7 +33,9 @@ path**, or a **git URL**. The run:
    call, structured JSON out);
 4. writes overlays to `data/enrichment/<slug>/llm.json` with
    `provenance: llm` and the target's `sourceContentHash`;
-5. republishes the repo's docs — site, MCP and `llms.txt` all update.
+5. generates any [core docs](core-docs.md) the repo hasn't curated
+   (repo-hash cached; `--no-core-docs` opts out);
+6. republishes the repo's docs — site, MCP and `llms.txt` all update.
 
 Output reports cost: calls made, input/output tokens, overlays written, and
 what was skipped.

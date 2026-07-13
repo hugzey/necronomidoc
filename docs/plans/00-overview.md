@@ -22,6 +22,7 @@ See the [decision register](../decisions/README.md). In brief:
 - [0007](../decisions/0007-extraction-stack-typescript.md) TS extraction: ts-morph sweep + TypeDoc JSON + react-docgen-typescript
 - [0008](../decisions/0008-mcp-serving.md) MCP = build-time manifests + stateless handler in the main server
 - [0009](../decisions/0009-project-stack.md) TypeScript everywhere; React + Vite + React Router frontend
+- [0015](../decisions/0015-core-docs.md) Core docs: four per-repo documents, repo > override > llm > heuristic
 
 ## System architecture (target state)
 
@@ -85,6 +86,7 @@ docs/
 | 4 | OpenAPI adapter + interactive API reference pages | [04-slice-4-openapi.md](04-slice-4-openapi.md) | ✅ Done |
 | 5 | Backend language adapters (Python + C#) proving the adapter pattern; toolchain packaging, `doctor`, `POST /api/ir` | [05-slice-5-backend-language.md](05-slice-5-backend-language.md) | ✅ Done |
 | 6 | Deployment & ops hardening: Docker, EC2/Azure/on-prem guides, auth, backups | [06-slice-6-deployment-ops.md](06-slice-6-deployment-ops.md) | ✅ Done |
+| 7 | Core docs: per-repo overview / conventions / packages / architecture (repo > override > llm > heuristic) | [07-core-docs.md](07-core-docs.md) | ✅ Done |
 
 Each slice ends deployed and demoable. Slice order after 2 can be re-prioritized; 4/5 are independent of 3.
 

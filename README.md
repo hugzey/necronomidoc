@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1–6 are complete.**
+**Slices 1–7 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -56,6 +56,16 @@ binding technical choices.
   for git-versioned curation backups, and a `doctor` secrets-hygiene pass
   ([plan](docs/plans/06-slice-6-deployment-ops.md),
   [config reference](docs/deploy/configuration.md)).
+- Slice 7 — core docs: every repo publishes four core documents — **project
+  overview**, **conventions**, **packages/modules/libraries**, and
+  **architecture** (with a mermaid diagram) — resolved per document by fixed
+  precedence: a file the repo ships (`.necronomidoc/docs/<kind>.md`) > a
+  server-side override (`data/enrichment/<slug>/docs/<kind>.md`) > LLM
+  generation via `enrich` (repo-hash cached) > an always-present heuristic
+  floor. Served as site pages, the `get_core_doc` MCP tool, search results,
+  and the top of `llms.txt`
+  ([plan](docs/plans/07-core-docs.md), [guide](docs/core-docs.md),
+  [decision 0015](docs/decisions/0015-core-docs.md)).
 
 ## Quick start
 
