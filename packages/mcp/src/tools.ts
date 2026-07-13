@@ -32,6 +32,44 @@ export interface ToolResult {
   [key: string]: unknown;
 }
 
+/** Keeps a giant spec's get_file_doc response under client tool-result caps. */
+const ENDPOINTS_MAX = 300;
+
+/**
+ * Group a spec file's endpoint symbols by their first OpenAPI tag — the
+ * compact "is there already an endpoint that does X?" index (slice 4 §3).
+ */
+function endpointsByTag(file: DocFile): {
+  endpointsByTag: { tag: string; endpoints: ToolResult[] }[];
+  endpointsTruncated?: number;
+} {
+  const groups = new Map<string, ToolResult[]>();
+  let total = 0;
+  let truncated = 0;
+  for (const s of file.symbols) {
+    if (s.kind !== "endpoint") continue;
+    if (total >= ENDPOINTS_MAX) {
+      truncated++;
+      continue;
+    }
+    total++;
+    const tag = s.doc?.tags.find((t) => t.tag === "tag")?.text ?? "untagged";
+    const list = groups.get(tag) ?? [];
+    list.push({
+      id: s.id,
+      endpoint: s.name,
+      line: s.location.line,
+      summary: s.enrichment?.summary ?? s.doc?.summary,
+      deprecated: s.doc?.deprecated ? true : undefined,
+    });
+    groups.set(tag, list);
+  }
+  return {
+    endpointsByTag: [...groups.entries()].map(([tag, endpoints]) => ({ tag, endpoints })),
+    endpointsTruncated: truncated > 0 ? truncated : undefined,
+  };
+}
+
 export const tools = {
   list_repos(store: ManifestStore): ToolResult {
     return {
@@ -74,6 +112,7 @@ export const tools = {
     const file = store.getFile(args.repo, args.path);
     if (!file) return { error: `No file "${args.path}" in repo "${args.repo}".` };
     // Prose documents return their body (bounded well under client caps).
+    // Specs return their operations grouped by tag instead of the raw spec.
     const CONTENT_MAX = 8000;
     const contentExtra =
       file.format === "markdown" && file.content
@@ -85,7 +124,9 @@ export const tools = {
                 ? `${file.content.slice(0, CONTENT_MAX)}\n…(truncated)`
                 : file.content,
           }
-        : {};
+        : file.format === "openapi"
+          ? { format: file.format, title: file.title, ...endpointsByTag(file) }
+          : {};
     return {
       repo: args.repo,
       path: file.path,
@@ -97,7 +138,9 @@ export const tools = {
       moduleDoc: file.moduleDoc?.summary,
       imports: file.imports.map((i) => i.moduleSpecifier),
       exports: file.exports,
-      symbols: file.symbols.map(symbolDigest),
+      // Spec files already list every operation in endpointsByTag — repeating
+      // them as symbol digests would double a large spec's response size.
+      symbols: file.format === "openapi" ? undefined : file.symbols.map(symbolDigest),
     };
   },
 

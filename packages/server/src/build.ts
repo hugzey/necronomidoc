@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MarkdownAdapter } from "@necronomidoc/adapter-markdown";
+import { OpenApiAdapter } from "@necronomidoc/adapter-openapi";
 import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
 import {
   SCHEMA_VERSION,
@@ -21,7 +22,7 @@ import {
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
-const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new MarkdownAdapter()];
+const ADAPTERS: DocAdapter[] = [new TypeScriptAdapter(), new OpenApiAdapter(), new MarkdownAdapter()];
 
 /** Combine per-adapter models into one (first adapter wins on path clashes). */
 function combineModels(models: DocModel[]): DocModel {

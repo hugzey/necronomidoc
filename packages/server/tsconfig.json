@@ -8,6 +8,7 @@
     { "path": "../docmodel" },
     { "path": "../adapter-ts" },
     { "path": "../adapter-markdown" },
+    { "path": "../adapter-openapi" },
     { "path": "../enrichment" },
     { "path": "../mcp" }
   ],

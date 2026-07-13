@@ -10,31 +10,43 @@ export function fileHref(slug: string, path: string, anchor?: string): string {
   return `/r/${slug}/f/${path}${anchor ? `#${anchor}` : ""}`;
 }
 
+/**
+ * The DOM anchor a symbol's card/heading renders with — must match how each
+ * page renders ids: code symbols anchor by name (SymbolCard), markdown
+ * sections by heading slug, endpoints by their operation slug (ApiReference).
+ */
+export function anchorForSymbol(kind: string | undefined, name: string): string {
+  if (kind === "section") return slugifyAnchor(name);
+  if (kind === "endpoint") return slugifyEndpointAnchor(name);
+  return name;
+}
+
 export interface SymbolIndex {
   /** Best repo-wide target per symbol name (exported symbols win). */
   byName: Map<string, { path: string; anchor: string }>;
   /** Per-file: symbol name -> anchor, including non-exported symbols. */
-  perFile: Map<string, Set<string>>;
+  perFile: Map<string, Map<string, string>>;
 }
 
 export function buildSymbolIndex(model: DocModel): SymbolIndex {
   const byName = new Map<string, { path: string; anchor: string; exported: boolean }>();
-  const perFile = new Map<string, Set<string>>();
+  const perFile = new Map<string, Map<string, string>>();
 
   for (const file of model.files) {
-    const names = new Set<string>();
+    const anchors = new Map<string, string>();
     const walk = (symbols: DocSymbolShape[]): void => {
       for (const s of symbols) {
-        names.add(s.name);
+        const anchor = anchorForSymbol(s.kind, s.name);
+        anchors.set(s.name, anchor);
         const existing = byName.get(s.name);
         if (!existing || (s.exported && !existing.exported)) {
-          byName.set(s.name, { path: file.path, anchor: s.name, exported: s.exported });
+          byName.set(s.name, { path: file.path, anchor, exported: s.exported });
         }
         if (s.members) walk(s.members);
       }
     };
     walk(file.symbols);
-    perFile.set(file.path, names);
+    perFile.set(file.path, anchors);
   }
 
   return {
@@ -56,9 +68,8 @@ export function makeResolver(
   currentPath?: string,
 ): SymbolResolver {
   return (name) => {
-    if (currentPath && index.perFile.get(currentPath)?.has(name)) {
-      return fileHref(slug, currentPath, name);
-    }
+    const local = currentPath ? index.perFile.get(currentPath)?.get(name) : undefined;
+    if (local !== undefined) return fileHref(slug, currentPath!, local);
     const target = index.byName.get(name);
     return target ? fileHref(slug, target.path, target.anchor) : undefined;
   };
@@ -90,6 +101,15 @@ export function slugifyAnchor(heading: string): string {
     .trim()
     .replace(/[^\w\s-]/g, "")
     .replace(/\s+/g, "-");
+}
+
+/**
+ * Anchor slug for an OpenAPI operation (`GET /users/{id}` → `get__users__id_`)
+ * — MUST stay in sync with `slugifyEndpointAnchor` in
+ * packages/docmodel/src/ids.ts (duplicated for the same zod-free reason).
+ */
+export function slugifyEndpointAnchor(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "_");
 }
 
 /**

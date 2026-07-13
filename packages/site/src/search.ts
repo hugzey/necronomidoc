@@ -30,7 +30,8 @@ export function buildSiteIndex(model: DocModel): MiniSearch<SiteSearchDoc> {
         file.title,
         file.enrichment?.summary,
         file.enrichment?.purpose,
-        file.content?.slice(0, 4000),
+        // Prose bodies only — spec files carry bundled JSON in `content`.
+        file.format === "markdown" ? file.content?.slice(0, 4000) : undefined,
       ]
         .filter(Boolean)
         .join(" "),

@@ -22,12 +22,13 @@ import {
   Sidebar,
 } from "./components.js";
 import { MarkdownDoc } from "./markdown.js";
+import { ApiReference } from "./openapi.js";
 import {
+  anchorForSymbol,
   buildSymbolIndex,
   fileHref,
   makeResolver,
   resolveImport,
-  slugifyAnchor,
   type SymbolResolver,
 } from "./resolve.js";
 import { buildSiteIndex } from "./search.js";
@@ -299,7 +300,7 @@ export function RepoView() {
                 to={fileHref(
                   slug,
                   r.path,
-                  r.type !== "symbol" ? undefined : r.kind === "section" ? slugifyAnchor(r.name) : r.name,
+                  r.type === "symbol" ? anchorForSymbol(r.kind, r.name) : undefined,
                 )}
               >
                 <KindBadge kind={String(r.kind ?? r.type)} />
@@ -649,6 +650,16 @@ export function FileView() {
     );
   }
 
+  // API specs render as an interactive reference (slice 4).
+  if (file.format === "openapi") {
+    return (
+      <div>
+        {breadcrumbs}
+        <ApiReference file={file} />
+      </div>
+    );
+  }
+
   return (
     <div>
       {breadcrumbs}
@@ -687,10 +698,8 @@ export function FileView() {
                         {" — "}
                         {imp.names.map((n, j) => {
                           const bare = n.replace(/^\* as /, "");
-                          const href =
-                            target && symbolIndex?.perFile.get(target)?.has(bare)
-                              ? fileHref(slug, target, bare)
-                              : resolve(bare);
+                          const anchor = target ? symbolIndex?.perFile.get(target)?.get(bare) : undefined;
+                          const href = anchor !== undefined ? fileHref(slug, target!, anchor) : resolve(bare);
                           return (
                             <span key={j}>
                               {j > 0 && ", "}

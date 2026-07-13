@@ -1,0 +1,114 @@
+openapi: 3.0.3
+info:
+  title: Sample Users API
+  version: "1.2.0"
+  description: >-
+    A small user-management API used as the necronomidoc OpenAPI fixture.
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local dev
+tags:
+  - name: users
+    description: Create, read, and delete user accounts.
+  - name: health
+    description: Service health.
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      description: Returns users, newest first, paginated with a cursor.
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of users to return.
+          schema: { type: integer, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque cursor from a previous page.
+          schema: { type: string }
+      responses:
+        "200":
+          description: A page of users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
+                  nextCursor: { type: string }
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a user
+      description: Creates a user account and sends the welcome email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewUser" }
+      responses:
+        "201":
+          description: The created user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409":
+          description: A user with this email already exists.
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The user's id.
+        schema: { type: string }
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get a user
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404":
+          description: No such user.
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      deprecated: true
+      description: Deprecated — deactivate users instead of deleting them.
+      responses:
+        "204":
+          description: Deleted.
+  /health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is up.
+components:
+  schemas:
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        manager: { $ref: "#/components/schemas/User" }
+    NewUser:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string }

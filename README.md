@@ -14,7 +14,7 @@ binding technical choices.
 
 ## Status
 
-**Slices 1, 2 and 3 are complete.**
+**Slices 1–4 are complete.**
 
 - Slice 1 — point it at a TypeScript/React repo and get a doc site + MCP
   endpoint ([plan](docs/plans/01-slice-1-ts-docs-and-mcp.md)).
@@ -29,6 +29,11 @@ binding technical choices.
   maps ("owns X / does not own Y") are served by MCP, search, and the site
   ([plan](docs/plans/03-slice-3-enrichment.md),
   [enrichment guide](docs/enrichment.md)).
+- Slice 4 — OpenAPI: any OpenAPI 3.x spec in a repo becomes an interactive
+  API reference (tag-grouped operations, schemas, a "try it" console) and its
+  operations become searchable, enrichable `endpoint` symbols served by MCP —
+  in the same repo entry as the code docs
+  ([plan](docs/plans/04-slice-4-openapi.md)).
 
 ## Quick start
 
@@ -60,6 +65,7 @@ Full guide: [docs/usage.md](docs/usage.md).
 |---------|------|
 | `packages/docmodel` | Versioned file-rooted IR + enrichment/manifest schemas (Zod), stable IDs, hashing |
 | `packages/adapter-ts` | TypeScript/React extraction (ts-morph sweep, JSDoc, components, prop tables) |
+| `packages/adapter-openapi` | OpenAPI 3.x spec extraction (validate + bundle, one `endpoint` symbol per operation) |
 | `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
 | `packages/mcp` | Manifest builder + 6 MCP tools over a stateless streamable-HTTP server |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API), provider adapters, journaled build queue |

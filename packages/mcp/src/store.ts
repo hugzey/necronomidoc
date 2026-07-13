@@ -134,8 +134,18 @@ export class ManifestStore {
   findSymbolByName(slug: string, name: string): DocSymbolShape | undefined {
     const repo = this.repos.get(slug);
     if (!repo) return undefined;
-    for (const s of repo.symbolsById.values()) if (s.name === name) return s;
-    return undefined;
+    // Endpoint names embed an HTTP method ("GET /users/{id}") — accept any
+    // casing for those so agents can ask for "get /users/{id}" too. Code
+    // symbols stay exact-match (`User` vs `user` are distinct declarations).
+    const lower = name.toLowerCase();
+    let endpointMatch: DocSymbolShape | undefined;
+    for (const s of repo.symbolsById.values()) {
+      if (s.name === name) return s;
+      if (!endpointMatch && s.kind === "endpoint" && s.name.toLowerCase() === lower) {
+        endpointMatch = s;
+      }
+    }
+    return endpointMatch;
   }
 
   fileOfSymbol(id: string): DocFile | undefined {

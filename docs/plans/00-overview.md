@@ -80,7 +80,7 @@ docs/
 | 1 | **TS/React repo → doc site + MCP, triggered manually (CLI/REST)** — the requirement-9 slice | [01-slice-1-ts-docs-and-mcp.md](01-slice-1-ts-docs-and-mcp.md) | ✅ Done |
 | 2 | Automated ingestion: GitHub/ADO/REST triggers, registry, queue, atomic publish | [02-slice-2-automated-ingestion.md](02-slice-2-automated-ingestion.md) | ✅ Done |
 | 3 | Enrichment at depth: LLM overlay writer, staleness workflow, subsystem overviews | [03-slice-3-enrichment.md](03-slice-3-enrichment.md) | ✅ Done |
-| 4 | OpenAPI adapter + interactive API reference pages | [04-slice-4-openapi.md](04-slice-4-openapi.md) | Planned |
+| 4 | OpenAPI adapter + interactive API reference pages | [04-slice-4-openapi.md](04-slice-4-openapi.md) | ✅ Done |
 | 5 | Second language adapter (backend) proving the adapter pattern | [05-slice-5-backend-language.md](05-slice-5-backend-language.md) | Planned |
 | 6 | Deployment & ops hardening: Docker, EC2/Azure/on-prem guides, auth, backups | [06-slice-6-deployment-ops.md](06-slice-6-deployment-ops.md) | Planned |
 
