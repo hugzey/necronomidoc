@@ -75,9 +75,15 @@ export function makeResolver(
   };
 }
 
-function dirname(p: string): string {
+/** Directory part of a slash-separated path ("" at the root). */
+export function dirname(p: string): string {
   const i = p.lastIndexOf("/");
   return i === -1 ? "" : p.slice(0, i);
+}
+
+/** Absolute/external href: has a scheme (https:, mailto:, …) or is protocol-relative. */
+export function isExternalHref(href: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//");
 }
 
 /** Collapse `.`/`..` segments in a relative path (never escapes the root). */
@@ -124,7 +130,7 @@ export function resolveDocLink(
   href: string,
   files: Pick<DocFile, "path">[],
 ): string | undefined {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return undefined;
+  if (isExternalHref(href)) return undefined;
   if (href.startsWith("#")) return undefined; // in-page anchor — leave as-is
   const [pathPart = "", fragment] = href.split("#");
   const known = new Set(files.map((f) => f.path));

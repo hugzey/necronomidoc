@@ -1,9 +1,12 @@
-import { isValidElement, useEffect, useId, useState, type ReactNode } from "react";
+import { isValidElement, memo, useEffect, useId, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "react-router-dom";
 import type { DocFile } from "./api.js";
-import { resolveDocLink, slugifyAnchor } from "./resolve.js";
+import { isExternalHref, resolveDocLink, slugifyAnchor } from "./resolve.js";
+
+// Stable identity so React.memo'd renders don't re-run the remark pipeline.
+const REMARK_PLUGINS = [remarkGfm];
 
 /** Plain text of a rendered heading's children (for anchor slugs). */
 function textOf(node: ReactNode): string {
@@ -87,7 +90,7 @@ function MermaidBlock({ code }: { code: string }) {
  * handbook uses one over its bundled pages); when it declines a relative
  * link, the link degrades to plain text rather than a dead navigation.
  */
-export function MarkdownDoc({
+export const MarkdownDoc = memo(function MarkdownDoc({
   content,
   slug = "",
   path = "",
@@ -100,6 +103,7 @@ export function MarkdownDoc({
   files?: Pick<DocFile, "path">[];
   resolveHref?: (href: string) => string | undefined;
 }) {
+  const resolveLink = resolveHref ?? ((href: string) => resolveDocLink(slug, path, href, files));
   const heading =
     (Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
     ({ children }: { children?: ReactNode }) => {
@@ -119,18 +123,12 @@ export function MarkdownDoc({
     h5: heading("h5"),
     h6: heading("h6"),
     a: ({ href, children }) => {
-      const internal = href
-        ? resolveHref
-          ? resolveHref(href)
-          : resolveDocLink(slug, path, href, files)
-        : undefined;
+      const internal = href ? resolveLink(href) : undefined;
       if (internal) return <Link to={internal}>{children}</Link>;
       if (href?.startsWith("#")) return <a href={href}>{children}</a>;
       // With a custom resolver, an unresolved relative link points at nothing
       // servable — render its text instead of a link into the SPA fallback.
-      if (resolveHref && href && !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("//")) {
-        return <>{children}</>;
-      }
+      if (resolveHref && href && !isExternalHref(href)) return <>{children}</>;
       return (
         <a href={href} target="_blank" rel="noreferrer">
           {children}
@@ -159,9 +157,9 @@ export function MarkdownDoc({
   return (
     <article className="prose prose-sm max-w-none sm:prose-base">
       {/* GFM: tables, strikethrough, task lists — README/guide staples. */}
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
         {content}
       </ReactMarkdown>
     </article>
   );
-}
+});

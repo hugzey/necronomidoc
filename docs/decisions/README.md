@@ -24,6 +24,11 @@ Architectural and directional decisions for the documentation server project. On
 | [0018](0018-artefact-generation.md) | Artefact generation: LLM-filled .md/.docx templates — placeholder mode preserves everything outside markers | Accepted |
 | [0019](0019-doc-standard.md) | Documentation standard: one written standard + `init-docs` scaffold + advisory doctor checks | Accepted |
 
+Some decisions cite pre-implementation research notes or numbered delivery
+plans ("slices"). Those documents were removed from the tree once the project
+reached its operational state; they remain available in the repository's git
+history.
+
 ## Statuses
 
 - **Proposed** — under discussion, not yet binding

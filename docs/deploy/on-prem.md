@@ -20,7 +20,7 @@ npm ci && npm run build:all
 DOCS_DATA_DIR=/var/lib/necronomidoc DOCS_TOKEN=<token> node packages/cli/dist/index.js serve
 ```
 
-For a long-lived host, run it under systemd — [`deploy/necronomidoc.service`](../../deploy/necronomidoc.service) is a hardened unit with install steps in its header.
+For a long-lived host, run it under systemd — `deploy/necronomidoc.service` in the source repository is a hardened unit with install steps in its header.
 
 ## 2. Reverse proxy (optional)
 

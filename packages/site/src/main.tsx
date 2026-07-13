@@ -28,7 +28,7 @@ createRoot(document.getElementById("root")!).render(
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
           <Route path="/status" element={<StatusView />} />
-          <Route path="/help" element={<HelpView />} />
+          {/* The splat also matches bare /help (empty splat → index page). */}
           <Route path="/help/*" element={<HelpView />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/skills/:id" element={<SkillSetView />} />
