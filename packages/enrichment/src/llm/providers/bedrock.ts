@@ -1,4 +1,9 @@
-import type { LlmClient, LlmCompleteRequest, LlmCompleteResult } from "../client.js";
+import {
+  promptWithInlineSchema,
+  type LlmClient,
+  type LlmCompleteRequest,
+  type LlmCompleteResult,
+} from "../client.js";
 
 /**
  * AWS Bedrock client over the model-agnostic Converse API (decision 0016):
@@ -63,9 +68,7 @@ export class BedrockLlmClient implements LlmClient {
 
   async complete(request: LlmCompleteRequest): Promise<LlmCompleteResult> {
     const send = await this.sender();
-    const prompt = request.jsonSchema
-      ? `${request.prompt}\n\nRespond with a single JSON object matching this JSON Schema exactly:\n${JSON.stringify(request.jsonSchema)}`
-      : request.prompt;
+    const prompt = promptWithInlineSchema(request);
     const response = await send({
       modelId: this.model,
       messages: [{ role: "user", content: [{ text: prompt }] }],

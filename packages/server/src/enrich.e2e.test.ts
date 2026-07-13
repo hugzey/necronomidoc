@@ -266,6 +266,11 @@ describe("agent-mode enrichment: export tasks → complete offline → import re
     const taskFile = EnrichmentTaskFile.parse(JSON.parse(readFileSync(tasksPath, "utf8")));
     expect(taskFile.instructions).toContain("--import-results");
 
+    // Core-doc/subsystem prompts are built from the overlay-merged view, so
+    // existing (here: human) summaries reach the agent just like a live run.
+    const overviewTask = taskFile.tasks.find((t) => t.id === "core-doc:overview")!;
+    expect(overviewTask.request.prompt).toContain("The one place formatting helpers live.");
+
     // Stand in for the coding agent: complete every task per its schema.
     const results: EnrichmentResultsFile = {
       formatVersion: 1,

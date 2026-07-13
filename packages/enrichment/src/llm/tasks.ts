@@ -20,7 +20,6 @@ import {
   planEnrichment,
   targetMetaFor,
   type EnrichmentPlan,
-  type EnrichmentTargetMeta,
 } from "./writer.js";
 
 /**
@@ -220,9 +219,7 @@ export function applyEnrichmentResults(
         // Task files always carry `target` for file-summary tasks; a
         // hand-edited file that dropped it is a validation failure.
         if (!task.target) throw new Error("task has no target metadata");
-        applied.overlays.push(
-          ...overlaysFromEnrichmentResponse(task.target as EnrichmentTargetMeta, text, now),
-        );
+        applied.overlays.push(...overlaysFromEnrichmentResponse(task.target, text, now));
       } else if (task.kind === "core-doc") {
         if (!task.coreDoc) throw new Error("task has no coreDoc metadata");
         applied.coreDocs.push(

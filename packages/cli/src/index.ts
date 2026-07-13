@@ -207,7 +207,15 @@ async function cmdEnrich(flags: Flags): Promise<number> {
       console.warn(`  ⚠ ignored result with unknown or duplicate id: ${id}`);
     }
     for (const failure of result.failures) console.warn(`  ✗ ${failure.id}: ${failure.error}`);
-    return result.failures.length > 0 && result.applied === 0 ? 1 : 0;
+    // Fail when there was work to do and none of it landed — an all-unmatched
+    // or empty results file must not read as success to scripts/CI.
+    const nothingLanded =
+      result.applied === 0 &&
+      result.failures.length +
+        result.unmatchedResults.length +
+        result.missingTasks.length >
+        0;
+    return nothingLanded ? 1 : 0;
   }
 
   const dryRun = flags["dry-run"] === true;

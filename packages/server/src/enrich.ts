@@ -87,7 +87,10 @@ function clientForRun(options: EnrichOptions): LlmClient {
       baseUrl: options.baseUrl,
     });
   } catch (err) {
-    if (options.dryRun && err instanceof LlmConfigError) {
+    // Missing credentials must not block a dry run (it never calls the
+    // model), but explicitly invalid input — a typo'd provider name — always
+    // surfaces, or the user only learns about it on the real run.
+    if (options.dryRun && err instanceof LlmConfigError && err.kind !== "invalid") {
       return {
         model: options.model ?? "(unconfigured)",
         complete: async () => {
@@ -97,6 +100,18 @@ function clientForRun(options: EnrichOptions): LlmClient {
     }
     throw err;
   }
+}
+
+/** Prompt-source reader over a working tree — one definition so the live and
+ * export paths can never read source differently (identical prompts). */
+function readSourceFrom(repoDir: string): (path: string) => string | undefined {
+  return (path) => {
+    try {
+      return readFileSync(join(repoDir, path), "utf8");
+    } catch {
+      return undefined;
+    }
+  };
 }
 
 /** What the core-docs step of an enrich run did (or would do, on dry runs). */
@@ -148,6 +163,15 @@ function persistLlmCoreDocs(enrichmentDir: string, docs: LlmCoreDoc[]): void {
   );
 }
 
+/** Persist an LLM-proposed subsystem map for review (whole-map semantics). */
+function persistLlmSubsystems(enrichmentDir: string, subsystems: unknown[]): void {
+  mkdirSync(enrichmentDir, { recursive: true });
+  writeFileSync(
+    join(enrichmentDir, LLM_SUBSYSTEMS_FILE),
+    JSON.stringify(subsystems, null, 2) + "\n",
+  );
+}
+
 /** Merge new llm overlays into the server-side per-repo `llm.json`. */
 function persistLlmOverlays(
   enrichmentDir: string,
@@ -187,13 +211,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
     const { overlays: newOverlays, report } = await runLlmEnrichment(model, {
       client,
       overlays,
-      readSource: (path) => {
-        try {
-          return readFileSync(join(repoDir, path), "utf8");
-        } catch {
-          return undefined;
-        }
-      },
+      readSource: readSourceFrom(repoDir),
       maxFiles: options.maxFiles,
       maxTokens: options.maxTokens,
       dryRun: options.dryRun,
@@ -214,11 +232,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       report.calls++;
       report.inputTokens += proposal.inputTokens;
       report.outputTokens += proposal.outputTokens;
-      mkdirSync(enrichmentDir, { recursive: true });
-      writeFileSync(
-        join(enrichmentDir, LLM_SUBSYSTEMS_FILE),
-        JSON.stringify(proposal.subsystems, null, 2) + "\n",
-      );
+      persistLlmSubsystems(enrichmentDir, proposal.subsystems);
       subsystemsProposed = proposal.subsystems.length;
     }
 
@@ -326,15 +340,13 @@ export async function exportEnrichTasks(options: ExportTasksOptions): Promise<Ex
             llmDir: enrichmentDir,
           }).needed
         : [];
-    const { taskFile, plan } = buildEnrichmentTaskFile(model, {
+    // Build tasks from the overlay-merged view, matching the live run: the
+    // core-doc/subsystem prompts include existing file summaries. (A live run
+    // also folds in the summaries it just generated; at export time those are
+    // sibling tasks in this same file, so they cannot be included.)
+    const { taskFile, plan } = buildEnrichmentTaskFile(mergeEnrichment(model, { overlays }), {
       overlays,
-      readSource: (path) => {
-        try {
-          return readFileSync(join(repoDir, path), "utf8");
-        } catch {
-          return undefined;
-        }
-      },
+      readSource: readSourceFrom(repoDir),
       maxFiles: options.maxFiles,
       coreDocKinds,
       subsystems: options.subsystems,
@@ -440,12 +452,9 @@ export async function importEnrichResults(
 
     if (applied.overlays.length > 0) persistLlmOverlays(enrichmentDir, applied.overlays);
     if (applied.coreDocs.length > 0) persistLlmCoreDocs(enrichmentDir, applied.coreDocs);
-    if (applied.subsystems) {
-      mkdirSync(enrichmentDir, { recursive: true });
-      writeFileSync(
-        join(enrichmentDir, LLM_SUBSYSTEMS_FILE),
-        JSON.stringify(applied.subsystems, null, 2) + "\n",
-      );
+    // An empty proposal must not wipe a previously reviewed map.
+    if (applied.subsystems && applied.subsystems.length > 0) {
+      persistLlmSubsystems(enrichmentDir, applied.subsystems);
     }
     publishModel(dataDir, model, repoDir);
 

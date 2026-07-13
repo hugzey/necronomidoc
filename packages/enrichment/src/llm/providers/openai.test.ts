@@ -67,7 +67,12 @@ describe("OpenAiCompatLlmClient", () => {
       { role: "system", content: "Be terse." },
       { role: "user", content: "Summarize." },
     ]);
-    expect(calls[0]!.body["response_format"]).toMatchObject({ type: "json_schema" });
+    // Never strict: strict mode rejects schemas with optional properties
+    // (like ours), which would disable structured output entirely.
+    expect(calls[0]!.body["response_format"]).toEqual({
+      type: "json_schema",
+      json_schema: { name: "response", schema: REQUEST.jsonSchema },
+    });
   });
 
   it("falls back to max_completion_tokens when the endpoint demands it", async () => {

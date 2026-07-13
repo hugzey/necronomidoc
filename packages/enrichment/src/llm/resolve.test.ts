@@ -40,6 +40,20 @@ describe("resolveLlmClient", () => {
     expect(client).toBeInstanceOf(AnthropicLlmClient);
   });
 
+  it("a base URL is not a credential: keyless endpoints detect as openai, but a real key wins", () => {
+    // Keyless local endpoint (vLLM, LM Studio): base URL alone selects openai.
+    const keyless = resolveLlmClient({
+      env: { NECRONOMIDOC_LLM_BASE_URL: "http://localhost:8000/v1" },
+      model: "local-model",
+    });
+    expect(keyless).toBeInstanceOf(OpenAiCompatLlmClient);
+    // An ambient base URL must not manufacture ambiguity against a real key.
+    const withKey = resolveLlmClient({
+      env: { ANTHROPIC_API_KEY: "k", NECRONOMIDOC_LLM_BASE_URL: "http://localhost:8000/v1" },
+    });
+    expect(withKey).toBeInstanceOf(AnthropicLlmClient);
+  });
+
   it("honors NECRONOMIDOC_LLM_PROVIDER and the legacy NECRONOMIDOC_ENRICH_MODEL", () => {
     const client = resolveLlmClient({
       env: {
@@ -51,8 +65,21 @@ describe("resolveLlmClient", () => {
     expect(client.model).toBe("claude-sonnet-5");
   });
 
-  it("rejects unknown providers by name", () => {
+  it("rejects unknown providers by name, marked invalid (never swallowed by dry runs)", () => {
     expect(() => resolveLlmClient({ provider: "skynet", env: {} })).toThrow(/Unknown LLM provider/);
+    try {
+      resolveLlmClient({ provider: "skynet", env: {} });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as LlmConfigError).kind).toBe("invalid");
+    }
+    // Merely-missing config is "incomplete" — dry runs may proceed past it.
+    try {
+      resolveLlmClient({ env: {} });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as LlmConfigError).kind).toBe("incomplete");
+    }
   });
 
   it("bedrock is explicit-only and needs a model id", () => {

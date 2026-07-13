@@ -24,6 +24,17 @@ export type LlmProviderId = (typeof LLM_PROVIDERS)[number];
 /** Configuration problem the operator can fix — the CLI prints it verbatim. */
 export class LlmConfigError extends Error {
   override readonly name = "LlmConfigError";
+  /**
+   * `invalid` = explicitly wrong input (e.g. a bad provider name) that must
+   * always surface; `incomplete` = credentials/model simply not set up yet,
+   * which dry runs are allowed to proceed without.
+   */
+  readonly kind: "invalid" | "incomplete";
+
+  constructor(message: string, kind: "invalid" | "incomplete" = "incomplete") {
+    super(message);
+    this.kind = kind;
+  }
 }
 
 export interface ResolveLlmClientOptions {
@@ -71,13 +82,17 @@ const CONFIG_HINT = [
 function detectProvider(env: Record<string, string | undefined>): LlmProviderId {
   const candidates: LlmProviderId[] = [];
   if (env["ANTHROPIC_API_KEY"]) candidates.push("anthropic");
-  if (env["OPENAI_API_KEY"] || env["NECRONOMIDOC_LLM_BASE_URL"]) candidates.push("openai");
+  if (env["OPENAI_API_KEY"]) candidates.push("openai");
   if (env["OPENROUTER_API_KEY"]) candidates.push("openrouter");
   if (env["AZURE_OPENAI_API_KEY"] || env["AZURE_AI_API_KEY"]) candidates.push("azure");
   // Bedrock is never auto-detected: AWS credentials are ambient on far too
   // many machines to imply "use Bedrock for LLM calls".
   if (candidates.length === 1) return candidates[0]!;
   if (candidates.length === 0) {
+    // A base URL alone (keyless local endpoint: vLLM, LM Studio, …) implies
+    // the OpenAI-compatible client — but it is not a credential, so it never
+    // creates ambiguity when a real key is present.
+    if (env["NECRONOMIDOC_LLM_BASE_URL"]) return "openai";
     throw new LlmConfigError(`No LLM provider configured.\n${CONFIG_HINT}`);
   }
   throw new LlmConfigError(
@@ -101,6 +116,7 @@ export function resolveLlmClient(options: ResolveLlmClientOptions = {}): LlmClie
     if (!(LLM_PROVIDERS as readonly string[]).includes(normalized)) {
       throw new LlmConfigError(
         `Unknown LLM provider "${rawProvider}" (known: ${LLM_PROVIDERS.join(", ")}).`,
+        "invalid",
       );
     }
     provider = normalized as LlmProviderId;
@@ -136,7 +152,11 @@ export function resolveLlmClient(options: ResolveLlmClientOptions = {}): LlmClie
     );
   }
   const key = apiKey ?? flavor.keyEnvs.map((name) => env[name]).find(Boolean);
-  if (!key && flavor.requiresKey) {
+  // A custom OpenAI-compatible endpoint (vLLM, LM Studio, a gateway) may be
+  // keyless; only the real OpenAI API unconditionally needs a key.
+  const keyRequired =
+    flavor.requiresKey && (provider !== "openai" || baseUrl === DEFAULT_OPENAI_BASE_URL);
+  if (!key && keyRequired) {
     throw new LlmConfigError(
       `Provider ${provider} needs an API key — set ${flavor.keyEnvs[0] ?? "NECRONOMIDOC_LLM_API_KEY"} (or NECRONOMIDOC_LLM_API_KEY).`,
     );

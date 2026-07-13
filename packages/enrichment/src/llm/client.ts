@@ -31,3 +31,14 @@ export interface LlmClient {
   readonly model: string;
   complete(request: LlmCompleteRequest): Promise<LlmCompleteResult>;
 }
+
+/**
+ * The one shared way to ask for schema-conformant JSON when the transport
+ * cannot enforce it server-side (Bedrock Converse, OpenAI-compatible servers
+ * without `response_format`): embed the schema in the prompt and let the
+ * caller's zod validation backstop it.
+ */
+export function promptWithInlineSchema(request: LlmCompleteRequest): string {
+  if (!request.jsonSchema) return request.prompt;
+  return `${request.prompt}\n\nRespond with a single JSON object matching this JSON Schema exactly:\n${JSON.stringify(request.jsonSchema)}`;
+}

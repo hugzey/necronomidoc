@@ -1,4 +1,9 @@
-import type { LlmClient, LlmCompleteRequest, LlmCompleteResult } from "../client.js";
+import {
+  promptWithInlineSchema,
+  type LlmClient,
+  type LlmCompleteRequest,
+  type LlmCompleteResult,
+} from "../client.js";
 
 /**
  * OpenAI-compatible chat-completions client (decision 0016). One fetch-based
@@ -62,13 +67,9 @@ export class OpenAiCompatLlmClient implements LlmClient {
   private body(request: LlmCompleteRequest): Record<string, unknown> {
     const messages: { role: string; content: string }[] = [];
     if (request.system) messages.push({ role: "system", content: request.system });
-    const includeSchemaInline =
-      request.jsonSchema !== undefined && this.structuredOutputUnsupported;
     messages.push({
       role: "user",
-      content: includeSchemaInline
-        ? `${request.prompt}\n\nRespond with a single JSON object matching this JSON Schema exactly:\n${JSON.stringify(request.jsonSchema)}`
-        : request.prompt,
+      content: this.structuredOutputUnsupported ? promptWithInlineSchema(request) : request.prompt,
     });
     return {
       model: this.model,
@@ -80,7 +81,10 @@ export class OpenAiCompatLlmClient implements LlmClient {
         ? {
             response_format: {
               type: "json_schema",
-              json_schema: { name: "response", strict: true, schema: request.jsonSchema },
+              // Not strict: OpenAI's strict mode rejects any schema whose
+              // properties aren't all required, and ours legitimately carry
+              // optional fields. Non-strict adherence + zod is the contract.
+              json_schema: { name: "response", schema: request.jsonSchema },
             },
           }
         : {}),
@@ -88,9 +92,10 @@ export class OpenAiCompatLlmClient implements LlmClient {
   }
 
   async complete(request: LlmCompleteRequest): Promise<LlmCompleteResult> {
-    // Up to two downgrade-and-retry rounds (token param, structured output);
-    // each downgrade is remembered so later calls go straight through.
-    for (let attempt = 0; ; attempt++) {
+    // At most two downgrade-and-retry rounds (token param, structured
+    // output): each retry flips a flag its own guard checks, so the loop
+    // terminates by construction, and later calls go straight through.
+    for (;;) {
       const response = await this.fetchImpl(this.url, {
         method: "POST",
         headers: this.headers,
@@ -98,7 +103,7 @@ export class OpenAiCompatLlmClient implements LlmClient {
       });
       const raw = await response.text();
       if (!response.ok) {
-        if (response.status === 400 && attempt < 2) {
+        if (response.status === 400) {
           if (!this.useMaxCompletionTokens && raw.includes("max_completion_tokens")) {
             this.useMaxCompletionTokens = true; // newer OpenAI models reject max_tokens
             continue;
@@ -130,12 +135,14 @@ export class OpenAiCompatLlmClient implements LlmClient {
         throw new Error("LLM output truncated (finish_reason: length) — response discarded.");
       }
       const text = choice.message.content ?? "";
-      // Some local servers omit usage; a chars/4 estimate keeps the token
-      // budget guard meaningful instead of silently unlimited.
+      // Some local servers omit usage; a chars/4 estimate over everything we
+      // actually sent (system + user prompt) keeps the token budget guard
+      // meaningful instead of silently unlimited.
       const estimate = (s: string) => Math.ceil(s.length / 4);
       return {
         text,
-        inputTokens: parsed.usage?.prompt_tokens ?? estimate(request.prompt),
+        inputTokens:
+          parsed.usage?.prompt_tokens ?? estimate((request.system ?? "") + request.prompt),
         outputTokens: parsed.usage?.completion_tokens ?? estimate(text),
       };
     }
