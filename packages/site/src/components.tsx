@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { DocFile, DocModel, Registry } from "./api.js";
+import { HELP_NAV, helpHref, helpIdFromPath, isActiveNavEntry } from "./help-nav.js";
 import { fileHref, type SymbolResolver } from "./resolve.js";
 
 // ---- Badges (daisyUI badge variants per symbol kind / provenance) ----
@@ -250,6 +251,40 @@ function TreeItems({
   );
 }
 
+/**
+ * Sidebar navigation for the /help handbook: necronomidoc's own served
+ * documentation, grouped by the curated HELP_NAV sections. Decision pages
+ * highlight the register entry they're reached from.
+ */
+function HelpNav({ activeId }: { activeId: string }) {
+  return (
+    <>
+      <div className="text-xs text-base-content/60">
+        The manual for this necronomidoc server — not for the repos it documents.
+      </div>
+      <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">
+        {HELP_NAV.map((section) => (
+          <li key={section.title}>
+            <h2 className="menu-title">{section.title}</h2>
+            <ul>
+              {section.pages.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    to={helpHref(p.id)}
+                    className={isActiveNavEntry(p.id, activeId) ? "menu-active" : ""}
+                  >
+                    {p.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function Sidebar({
   registry,
   model,
@@ -262,6 +297,8 @@ export function Sidebar({
   activePath?: string;
 }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const helpMatch = pathname === "/help" || pathname.startsWith("/help/");
   const tree = useMemo(() => (model ? buildTree(model.files) : undefined), [model]);
   const specFiles = useMemo(
     () => model?.files.filter((f) => f.format === "openapi") ?? [],
@@ -272,77 +309,93 @@ export function Sidebar({
       <Link to="/" className="text-lg font-bold tracking-tight">
         necronomidoc
       </Link>
-      <select
-        className="select select-sm w-full"
-        value={slug ?? ""}
-        onChange={(e) => navigate(`/r/${e.target.value}`)}
-        aria-label="Select repository"
-      >
-        <option value="" disabled>
-          Select a repo…
-        </option>
-        {registry?.repos.map((r) => (
-          <option key={r.slug} value={r.slug}>
-            {r.name}
-          </option>
-        ))}
-      </select>
-      {slug && (
-        <div>
-          <div className="mb-1 text-xs font-medium uppercase text-base-content/50">Core docs</div>
-          <ul className="menu menu-sm w-full p-0">
-            {(
-              [
-                ["overview", "Overview"],
-                ["conventions", "Conventions"],
-                ["packages", "Packages"],
-                ["architecture", "Architecture"],
-              ] as const
-            ).map(([kind, label]) => (
-              <li key={kind}>
-                <Link to={`/r/${slug}/docs/${kind}`}>{label}</Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {slug && (
-        <Link to={`/r/${slug}/subsystems`} className="link-hover link text-sm">
-          Subsystems
-        </Link>
-      )}
-      {slug && specFiles.length > 0 && (
-        <div>
-          <div className="mb-1 text-xs font-medium uppercase text-base-content/50">API Reference</div>
-          <ul className="menu menu-sm w-full p-0">
-            {specFiles.map((f) => (
-              <li key={f.id}>
-                <Link to={fileHref(slug, f.path)} className={f.path === activePath ? "menu-active" : ""}>
-                  {f.title ?? f.path}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {slug && tree ? (
-        <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">
-          <TreeItems node={tree} slug={slug} activePath={activePath} depth={0} />
-        </ul>
+      {helpMatch ? (
+        <>
+          <HelpNav activeId={helpIdFromPath(pathname)} />
+          <div className="mt-auto flex flex-col gap-1 border-t border-base-300 pt-3">
+            <Link to="/" className="link-hover link text-sm text-base-content/60">
+              ← Documented repos
+            </Link>
+          </div>
+        </>
       ) : (
-        <p className="text-sm text-base-content/60">Pick a repo to browse its files.</p>
+        <>
+          <select
+            className="select select-sm w-full"
+            value={slug ?? ""}
+            onChange={(e) => navigate(`/r/${e.target.value}`)}
+            aria-label="Select repository"
+          >
+            <option value="" disabled>
+              Select a repo…
+            </option>
+            {registry?.repos.map((r) => (
+              <option key={r.slug} value={r.slug}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          {slug && (
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase text-base-content/50">Core docs</div>
+              <ul className="menu menu-sm w-full p-0">
+                {(
+                  [
+                    ["overview", "Overview"],
+                    ["conventions", "Conventions"],
+                    ["packages", "Packages"],
+                    ["architecture", "Architecture"],
+                  ] as const
+                ).map(([kind, label]) => (
+                  <li key={kind}>
+                    <Link to={`/r/${slug}/docs/${kind}`}>{label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {slug && (
+            <Link to={`/r/${slug}/subsystems`} className="link-hover link text-sm">
+              Subsystems
+            </Link>
+          )}
+          {slug && specFiles.length > 0 && (
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase text-base-content/50">API Reference</div>
+              <ul className="menu menu-sm w-full p-0">
+                {specFiles.map((f) => (
+                  <li key={f.id}>
+                    <Link to={fileHref(slug, f.path)} className={f.path === activePath ? "menu-active" : ""}>
+                      {f.title ?? f.path}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {slug && tree ? (
+            <ul className="menu menu-sm w-full flex-nowrap overflow-y-auto p-0">
+              <TreeItems node={tree} slug={slug} activePath={activePath} depth={0} />
+            </ul>
+          ) : (
+            <p className="text-sm text-base-content/60">Pick a repo to browse its files.</p>
+          )}
+          <div className="mt-auto flex flex-col gap-1 border-t border-base-300 pt-3">
+            <Link to="/skills" className="link-hover link text-sm text-base-content/60">
+              Skills
+            </Link>
+            <Link to="/artefacts" className="link-hover link text-sm text-base-content/60">
+              Artefacts
+            </Link>
+            <Link to="/status" className="link-hover link text-sm text-base-content/60">
+              Build status
+            </Link>
+            <Link to="/help" className="link-hover link text-sm text-base-content/60">
+              Necronomidoc docs
+            </Link>
+          </div>
+        </>
       )}
-      <div className="mt-auto flex flex-col gap-1 border-t border-base-300 pt-3">
-        <Link to="/skills" className="link-hover link text-sm text-base-content/60">
-          Skills
-        </Link>
-        <Link to="/artefacts" className="link-hover link text-sm text-base-content/60">
-          Artefacts
-        </Link>
-        <Link to="/status" className="link-hover link text-sm text-base-content/60">
-          Build status
-        </Link>
-      </div>
     </nav>
   );
 }

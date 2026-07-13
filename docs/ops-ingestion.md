@@ -1,4 +1,4 @@
-# Ops — Automated ingestion (slice 2)
+# Automated ingestion — rebuild docs on push
 
 How to make repos rebuild their docs automatically on push. Three trigger
 paths, all normalizing to the same internal event and the same build queue
@@ -86,10 +86,10 @@ curl -X POST https://<your-server>/api/build \
 
 `$TOKEN` is either the global admin token (`DOCS_TOKEN`) or a per-repo token
 (the value of the var named in that repo's `apiTokenEnv` — scoped to that repo
-only). Builds always target the repo's tracked branch. The slice-1 ad-hoc form
-`{"path":…}` / `{"repoUrl":…}` still works and requires the global token.
+only). Builds always target the repo's tracked branch. The ad-hoc form
+`{"path":…}` / `{"repoUrl":…}` also works and requires the global token.
 
-## 4b. Pre-extracted IR from CI — `POST /api/ir` (slice 5)
+## 4b. Pre-extracted IR from CI — `POST /api/ir`
 
 For repos in languages the server doesn't bundle a toolchain for (or repos
 that can't build on the server), CI extracts the docs itself and posts a

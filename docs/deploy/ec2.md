@@ -41,7 +41,7 @@ Edit `docker-compose.yml` to bind-mount the EBS volume instead of the named volu
       - /var/lib/necronomidoc:/data
 ```
 
-*Bare-metal alternative:* install Node 22 + git, `npm ci && npm run build:all`, then use the systemd unit in [`deploy/necronomidoc.service`](../../deploy/necronomidoc.service) (its header has the install steps).
+*Bare-metal alternative:* install Node 22 + git, `npm ci && npm run build:all`, then use the systemd unit at `deploy/necronomidoc.service` in the source repository (its header has the install steps).
 
 ## 4. TLS reverse proxy
 

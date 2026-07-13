@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-10
-- **Decider:** Project (from [research 02](../research/02-doc-extraction-adapters.md))
+- **Decider:** Project (from the doc-extraction adapter research)
 
 ## Context
 

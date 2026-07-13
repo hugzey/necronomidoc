@@ -14,6 +14,7 @@ import {
   StatusView,
   SubsystemsView,
 } from "./pages.js";
+import { HelpView } from "./help.js";
 import "./styles.css";
 
 // Static single-file exports can't rely on server-side SPA fallback, so they
@@ -27,6 +28,8 @@ createRoot(document.getElementById("root")!).render(
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
           <Route path="/status" element={<StatusView />} />
+          {/* The splat also matches bare /help (empty splat → index page). */}
+          <Route path="/help/*" element={<HelpView />} />
           <Route path="/skills" element={<SkillsView />} />
           <Route path="/skills/:id" element={<SkillSetView />} />
           <Route path="/artefacts" element={<ArtefactsView />} />
