@@ -57,6 +57,14 @@ in (decision [0016](decisions/0016-llm-provider-agnostic.md)). With exactly
 one provider's key in the environment, `enrich` auto-detects it; with several
 (or none), pick explicitly with `--provider` / `NECRONOMIDOC_LLM_PROVIDER`.
 
+**API keys are optional.** `enrich` needs *a* model, not *a key*: Ollama and
+Bedrock work without one (local server / AWS credential chain), and
+[agent mode](#agent-based-enrichment-no-api-key) needs no model access at
+all — your coding agent does the writing. `--dry-run`, `--export-tasks`,
+`--import-results`, and `--review-stale` never require credentials. Only a
+live generation run with nothing configured errors, and that error lists
+every option and points here.
+
 | Provider | Select with | Credentials | Notes |
 |---|---|---|---|
 | Anthropic | auto, or `--provider anthropic` | `ANTHROPIC_API_KEY` | default model `claude-opus-4-8`; JSON schema enforced server-side |
@@ -120,6 +128,26 @@ node packages/cli/dist/index.js enrich <target> --import-results results.json --
   staleness workflow and regenerate next run — no special case.
 - Re-running `--export-tasks` after an import produces an empty task file:
   the hash cache sees everything as fresh.
+
+### Troubleshooting
+
+**Still seeing `enrich: set ANTHROPIC_API_KEY (or use --dry-run …)`?**
+That message only exists in pre-0016 builds — you are running a stale
+compiled CLI. Rebuild and re-run:
+
+```bash
+npm run build        # or build:all; refreshes packages/*/dist
+node packages/cli/dist/index.js enrich <target> …
+```
+
+(Also re-run `npm install` first if you just pulled, so new dependencies are
+present.) Current builds never demand a specific vendor key: with no provider
+configured, a live run prints the full menu of options — keys, keyless
+providers, agent mode, dry run — and references this document.
+
+**"Credentials for multiple providers found"** — more than one `*_API_KEY`
+is exported. Pick one for this run: `--provider anthropic` (or `openai`,
+`openrouter`, `azure`, …), or set `NECRONOMIDOC_LLM_PROVIDER`.
 
 ## Staleness workflow
 

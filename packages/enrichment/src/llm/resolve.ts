@@ -67,15 +67,24 @@ const OPENAI_FLAVORS: Record<
 };
 
 const CONFIG_HINT = [
-  "Configure an LLM provider for `enrich`:",
-  "  anthropic   set ANTHROPIC_API_KEY",
-  "  openai      set OPENAI_API_KEY (any OpenAI-compatible endpoint via --base-url / NECRONOMIDOC_LLM_BASE_URL)",
-  "  openrouter  set OPENROUTER_API_KEY",
-  "  azure       set AZURE_OPENAI_API_KEY + --base-url https://<resource>.openai.azure.com/openai/v1",
-  "  ollama      --provider ollama --model <local model> (no key)",
-  "  bedrock     --provider bedrock --model <bedrock model id> (AWS credential chain)",
-  "Pick explicitly with --provider or NECRONOMIDOC_LLM_PROVIDER.",
-  "Or skip API keys entirely: `enrich --export-tasks` + a local coding agent + `enrich --import-results` (see docs/enrichment.md).",
+  "`enrich` needs a model to write with — an API key is only one way to provide it. Pick ONE of:",
+  "",
+  "  with an API key:",
+  "    anthropic   set ANTHROPIC_API_KEY",
+  "    openai      set OPENAI_API_KEY (any OpenAI-compatible endpoint via --base-url / NECRONOMIDOC_LLM_BASE_URL)",
+  "    openrouter  set OPENROUTER_API_KEY",
+  "    azure       set AZURE_OPENAI_API_KEY + --base-url https://<resource>.openai.azure.com/openai/v1",
+  "",
+  "  without any API key:",
+  "    agent mode  `enrich <target> --export-tasks tasks.json`, have your coding agent",
+  "                (Claude Code, Codex CLI, …) complete it, then `enrich <target> --import-results`",
+  "    ollama      --provider ollama --model <local model> (local server)",
+  "    bedrock     --provider bedrock --model <bedrock model id> (AWS credential chain)",
+  "",
+  "  or preview only: --dry-run plans the run without touching any model.",
+  "",
+  "Pick a provider explicitly with --provider or NECRONOMIDOC_LLM_PROVIDER.",
+  'Docs: docs/enrichment.md — "Choosing a provider" and "Agent-based enrichment (no API key)".',
 ].join("\n");
 
 /** Auto-detect a provider from which credentials the environment carries. */

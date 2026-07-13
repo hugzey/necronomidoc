@@ -27,9 +27,11 @@ describe("resolveLlmClient", () => {
     expect(client.model).toBe("openrouter/auto");
   });
 
-  it("errors on no configuration, with the export-tasks alternative in the hint", () => {
+  it("errors on no configuration, with keyless alternatives and a docs pointer in the hint", () => {
     expect(() => resolveLlmClient({ env: {} })).toThrow(LlmConfigError);
     expect(() => resolveLlmClient({ env: {} })).toThrow(/export-tasks/);
+    expect(() => resolveLlmClient({ env: {} })).toThrow(/without any API key/);
+    expect(() => resolveLlmClient({ env: {} })).toThrow(/docs\/enrichment\.md/);
   });
 
   it("refuses to guess between multiple configured providers", () => {
