@@ -25,6 +25,8 @@ import {
 } from "@necronomidoc/enrichment";
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 import { ensureDataDirVersion } from "./datadir.js";
+import { snapshotSources } from "./sources.js";
+import { appendVersion, computeDocsHash, readVersions, writeVersions } from "./versions.js";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
 const ADAPTERS: DocAdapter[] = [
@@ -66,6 +68,18 @@ export interface BuildOptions {
   /** Git ref to check out when cloning a URL. */
   ref?: string;
   adapterConfig?: Partial<AdapterConfig>;
+  /** What started the build, for the version journal (default `cli`). */
+  trigger?: string;
+}
+
+/** Provenance a publish records into the version journal (decision 0021). */
+export interface PublishInfo {
+  /** What started the build: cli | enrich | rest | github | ado | generic | external-ir. */
+  trigger?: string;
+  /** Extraction stack: `+`-joined adapter languages, or `external-ir`. */
+  adapter?: string;
+  /** Where the source came from: repo URL or local path. */
+  source?: string;
 }
 
 export interface BuildResult {
@@ -151,6 +165,7 @@ export function publishModel(
   model: DocModel,
   /** Omitted for pre-extracted IR (POST /api/ir): only server-side overlays apply. */
   repoDir?: string,
+  info: PublishInfo = {},
 ): { model: DocModel; entry: RegistryEntry } {
   // Every writer stamps the dir's schema version, so a dir produced by CLI
   // builds alone still carries the upgrade-guard marker (slice 6).
@@ -174,8 +189,23 @@ export function publishModel(
   });
   const report = computeEnrichmentReport(merged);
 
-  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report });
   const entry = registryEntryFor(merged, report);
+  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report }, (tmpDir) => {
+    // Source snapshots + version journal are staged into the same tmp dir so
+    // the atomic swap publishes everything (or nothing) together.
+    const sources = snapshotSources(merged, tmpDir, repoDir);
+    const docsHash = computeDocsHash(merged, subsystems, coreDocs);
+    const versions = appendVersion(readVersions(dataDir, merged.repo.slug), merged, docsHash, {
+      trigger: info.trigger,
+      adapter: info.adapter,
+      source: info.source ?? merged.repo.url,
+      enrichment: report.totals,
+      sourceFileCount: sources.files.length,
+      fileCount: entry.fileCount,
+      symbolCount: entry.symbolCount,
+    });
+    writeVersions(tmpDir, versions);
+  });
   upsertRegistry(dataDir, entry);
   return { model: merged, entry };
 }
@@ -199,7 +229,11 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
       ...options.adapterConfig,
     };
     const { model, adapter } = await extractRepoModel(repoDir, config);
-    const { model: merged, entry } = publishModel(dataDir, model, repoDir);
+    const { model: merged, entry } = publishModel(dataDir, model, repoDir, {
+      trigger: options.trigger ?? "cli",
+      adapter,
+      source: repoUrl ?? repoDir,
+    });
     return { model: merged, entry, adapter };
   } finally {
     cleanup?.();
@@ -226,6 +260,8 @@ function publishAtomically(
   dataDir: string,
   model: DocModel,
   extras: Parameters<typeof writeRepoManifests>[2] = {},
+  /** Extra staged writes (source snapshots, version journal) into the tmp dir. */
+  stage?: (tmpDir: string) => void,
 ): void {
   const finalDir = paths.repoDir(dataDir, model.repo.slug);
   const tmpDir = `${finalDir}.tmp`;
@@ -234,6 +270,7 @@ function publishAtomically(
   rmSync(oldDir, { recursive: true, force: true });
 
   writeRepoManifests(model, tmpDir, extras);
+  stage?.(tmpDir);
 
   if (existsSync(finalDir)) renameSync(finalDir, oldDir);
   renameSync(tmpDir, finalDir);

@@ -253,7 +253,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
     if (!options.dryRun) {
       if (newOverlays.length > 0) persistLlmOverlays(enrichmentDir, newOverlays);
       // Republish even when nothing changed: the report + subsystems refresh.
-      publishModel(dataDir, model, repoDir);
+      publishModel(dataDir, model, repoDir, { trigger: "enrich" });
       published = true;
     }
 
@@ -428,7 +428,7 @@ export async function importEnrichResults(
     if (applied.subsystems && applied.subsystems.length > 0) {
       persistLlmSubsystems(enrichmentDir, applied.subsystems);
     }
-    publishModel(dataDir, model, repoDir);
+    publishModel(dataDir, model, repoDir, { trigger: "enrich" });
 
     return {
       slug,

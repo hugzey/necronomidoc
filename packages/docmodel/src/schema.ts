@@ -416,6 +416,81 @@ export const ArtefactIndex = z.object({
 });
 export type ArtefactIndex = z.infer<typeof ArtefactIndex>;
 
+// ---- Source snapshots (site source viewer) ----
+
+/** One source file snapshotted next to the doc model for the source viewer. */
+export const SourceFileEntry = z.object({
+  /** Repo-relative path, matching `DocFile.path`. */
+  path: z.string(),
+  /** Snapshot size in bytes. */
+  size: z.number().int().nonnegative(),
+  /** `hashContent` of the snapshot, matching `DocFile.contentHash`. */
+  contentHash: z.string(),
+});
+export type SourceFileEntry = z.infer<typeof SourceFileEntry>;
+
+/**
+ * Index of the source files published under `repos/<slug>/sources/` so the
+ * site knows which files have a viewable snapshot without probing per file.
+ * Only `format: "source"` files are snapshotted (prose/spec formats already
+ * carry their text in `DocFile.content`), and only up to a size cap.
+ */
+export const SourcesManifest = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  repo: z.string(),
+  files: z.array(SourceFileEntry).default([]),
+  generatedAt: z.string().optional(),
+});
+export type SourcesManifest = z.infer<typeof SourcesManifest>;
+
+// ---- Documentation version journal ----
+
+/**
+ * One version of a repo's published documentation state, with the metadata of
+ * the generation run that produced it. A new entry is appended only when the
+ * documentation state actually changes (`docsHash` moves); rebuilds that
+ * reproduce the same state touch `lastRebuiltAt`/`rebuilds` on the current
+ * entry instead.
+ */
+export const DocVersionEntry = z.object({
+  /** Monotonic per-repo version number (1 = first publish). */
+  version: z.number().int().positive(),
+  /** When this version was first published (ISO). */
+  generatedAt: z.string(),
+  /** Hash of the merged documentation state (extracted facts + enrichment). */
+  docsHash: z.string(),
+  /** `repoContentHash` of the extracted files (code only, enrichment-free). */
+  contentHash: z.string(),
+  /** Git commit/ref the docs were built from, when known. */
+  commit: z.string().optional(),
+  ref: z.string().optional(),
+  /** Where the source came from: repo URL or local path. */
+  source: z.string().optional(),
+  /** What started the build: cli | enrich | rest | github | ado | generic | external-ir. */
+  trigger: z.string().optional(),
+  /** Extraction stack: `+`-joined adapter languages, or `external-ir`. */
+  adapter: z.string().optional(),
+  fileCount: z.number().int().nonnegative(),
+  symbolCount: z.number().int().nonnegative(),
+  /** Enrichment coverage/staleness at publish time. */
+  enrichment: EnrichmentTotals.optional(),
+  /** How many source files were snapshotted for the source viewer. */
+  sourceFileCount: z.number().int().nonnegative().optional(),
+  /** Most recent rebuild that reproduced this same state (ISO). */
+  lastRebuiltAt: z.string().optional(),
+  /** Rebuilds since `generatedAt` that reproduced this same state. */
+  rebuilds: z.number().int().nonnegative().default(0),
+});
+export type DocVersionEntry = z.infer<typeof DocVersionEntry>;
+
+/** The per-repo documentation version journal, newest first. */
+export const VersionsManifest = z.object({
+  schemaVersion: z.literal(SCHEMA_VERSION),
+  repo: z.string(),
+  versions: z.array(DocVersionEntry).default([]),
+});
+export type VersionsManifest = z.infer<typeof VersionsManifest>;
+
 // ---- Manifests consumed by the site + MCP ----
 
 /** One repo's summary line in the registry. */

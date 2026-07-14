@@ -48,6 +48,73 @@ a.xref code {
   color: var(--color-primary);
 }
 
+/* ---- Source viewer (decision 0020) ---- */
+
+/* Syntax token palette. Light theme is the default; the dark palette applies
+   under the OS preference and under an explicit data-theme="dark", matching
+   how daisyUI's themes are configured above. */
+:root {
+  --tok-kw: oklch(0.45 0.22 300); /* keywords: violet */
+  --tok-str: oklch(0.5 0.14 145); /* strings: green */
+  --tok-com: oklch(0.55 0.03 250); /* comments: muted slate */
+  --tok-num: oklch(0.5 0.15 50); /* numbers: amber-brown */
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --tok-kw: oklch(0.75 0.15 300);
+    --tok-str: oklch(0.78 0.12 145);
+    --tok-com: oklch(0.62 0.02 250);
+    --tok-num: oklch(0.78 0.12 60);
+  }
+}
+:root[data-theme="dark"] {
+  --tok-kw: oklch(0.75 0.15 300);
+  --tok-str: oklch(0.78 0.12 145);
+  --tok-com: oklch(0.62 0.02 250);
+  --tok-num: oklch(0.78 0.12 60);
+}
+
+.tok-kw {
+  color: var(--tok-kw);
+}
+.tok-str {
+  color: var(--tok-str);
+}
+.tok-com {
+  color: var(--tok-com);
+  font-style: italic;
+}
+.tok-num {
+  color: var(--tok-num);
+}
+
+.src-line {
+  display: flex;
+}
+.src-line:hover {
+  background: color-mix(in oklab, var(--color-base-content) 5%, transparent);
+}
+.src-lineno {
+  flex: none;
+  width: 3.5rem;
+  padding-right: 0.75rem;
+  text-align: right;
+  color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  user-select: none;
+}
+.src-lineno:hover {
+  color: var(--color-primary);
+}
+.src-code {
+  white-space: pre;
+}
+.src-line-focus {
+  background: color-mix(in oklab, var(--color-primary) 14%, transparent);
+}
+.src-line-focus .src-lineno {
+  color: var(--color-primary);
+}
+
 /* Brief highlight when a symbol card is jumped to via an anchor link. */
 .anchor-flash {
   animation: anchor-flash 1.2s ease-out;

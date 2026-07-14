@@ -8,13 +8,16 @@ import type {
   DocFile,
   DocModel,
   DocSymbolShape,
+  DocVersionEntry,
   GenerationScope,
   IngestStatusResponse,
   Registry,
   SkillSet,
   SkillSetIndex,
+  SourcesManifest,
   Subsystem,
   SubsystemsManifest,
+  VersionsManifest,
 } from "@necronomidoc/docmodel";
 
 export type {
@@ -27,12 +30,15 @@ export type {
   DocFile,
   DocModel,
   DocSymbolShape,
+  DocVersionEntry,
   GenerationScope,
   Registry,
   SkillSet,
   SkillSetIndex,
+  SourcesManifest,
   Subsystem,
   SubsystemsManifest,
+  VersionsManifest,
 };
 
 /**
@@ -95,6 +101,49 @@ export async function fetchCoreDocs(slug: string): Promise<CoreDocsManifest | un
   const res = await fetch(`/data/repos/${slug}/coredocs.json`);
   if (!res.ok) return undefined;
   return (await res.json()) as CoreDocsManifest;
+}
+
+/**
+ * The repo's source-snapshot index (decision 0020). Unavailable in
+ * static-export mode and for repos built before the source viewer shipped —
+ * both return undefined so the "View source" button simply doesn't render.
+ */
+export async function fetchSources(slug: string): Promise<SourcesManifest | undefined> {
+  if (injectedData()) return undefined;
+  return getOptionalJson<SourcesManifest>(`/data/repos/${slug}/sources.json`);
+}
+
+/**
+ * The repo's documentation version journal (decision 0021). Same graceful
+ * degradation as the other optional manifests.
+ */
+export async function fetchVersions(slug: string): Promise<VersionsManifest | undefined> {
+  if (injectedData()) return undefined;
+  return getOptionalJson<VersionsManifest>(`/data/repos/${slug}/versions.json`);
+}
+
+async function getOptionalJson<T>(url: string): Promise<T | undefined> {
+  if (cache.has(url)) return cache.get(url) as T;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const data = (await res.json()) as T;
+  cache.set(url, data);
+  return data;
+}
+
+/**
+ * One snapshotted source file's text, for the source viewer. Undefined when
+ * the snapshot is missing (pre-viewer build, size-capped file, static export).
+ */
+export async function fetchSourceText(slug: string, path: string): Promise<string | undefined> {
+  if (injectedData()) return undefined;
+  const url = `/data/repos/${slug}/sources/${path.split("/").map(encodeURIComponent).join("/")}`;
+  if (cache.has(url)) return cache.get(url) as string;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const text = await res.text();
+  cache.set(url, text);
+  return text;
 }
 
 // ---- Ingestion status (slice 2) ----

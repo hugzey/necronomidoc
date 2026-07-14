@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, Outlet, useLocation, useMatch, useParams } from "react-router-dom";
+import { Link, Outlet, useLocation, useMatch, useParams, useSearchParams } from "react-router-dom";
 import {
   fetchArtefacts,
   fetchCoreDocs,
@@ -7,6 +7,7 @@ import {
   fetchRegistry,
   fetchSkillSet,
   fetchSkillSets,
+  fetchSources,
   fetchStatus,
   fetchSubsystems,
   flattenSymbols,
@@ -21,6 +22,7 @@ import {
   type SkillSet,
   type SkillSetIndex,
   type SkillsGenerateResult,
+  type SourcesManifest,
   type StatusResponse,
   type Subsystem,
   type SubsystemsManifest,
@@ -35,16 +37,20 @@ import {
   Sidebar,
 } from "./components.js";
 import { MarkdownDoc } from "./markdown.js";
+import { RepoInfoDrawer } from "./meta.js";
 import { ApiReference } from "./openapi.js";
 import {
   anchorForSymbol,
   buildSymbolIndex,
   fileHref,
   makeResolver,
+  makeTargetResolver,
   resolveImport,
+  sourceHref,
   type SymbolResolver,
 } from "./resolve.js";
 import { buildSiteIndex } from "./search.js";
+import { SourcePanel, SplitSourceView } from "./source.js";
 
 function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data?: T; error?: string; loading: boolean } {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
@@ -88,6 +94,10 @@ export function Layout() {
   );
   const drawerRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // The doc column stays readable-width; with the source panel open the file
+  // page needs the whole viewport for its split view.
+  const wide = fileMatch !== null && searchParams.get("source") === "1";
   useEffect(() => {
     if (drawerRef.current) drawerRef.current.checked = false;
   }, [location]);
@@ -106,8 +116,9 @@ export function Layout() {
             necronomidoc
           </Link>
         </header>
-        <main className="mx-auto w-full max-w-4xl px-5 py-8">
+        <main className={`relative mx-auto w-full ${wide ? "max-w-none" : "max-w-4xl"} px-5 py-8`}>
           <ScrollToAnchor />
+          {slug && <RepoInfoDrawer slug={slug} />}
           <Outlet />
         </main>
       </div>
@@ -1058,9 +1069,12 @@ export function SubsystemsView() {
 function SymbolCard({
   symbol,
   resolve,
+  sourceLink,
 }: {
   symbol: DocSymbolShape;
   resolve: SymbolResolver;
+  /** Href opening the source panel at this symbol's declaration line. */
+  sourceLink?: string;
 }) {
   return (
     <div className="card card-border mb-4 bg-base-100 scroll-mt-4" id={symbol.name}>
@@ -1074,6 +1088,15 @@ function SymbolCard({
             <span className="badge badge-sm badge-success badge-outline">export</span>
           ) : (
             <span className="badge badge-sm badge-ghost">internal</span>
+          )}
+          {sourceLink && (
+            <Link
+              to={sourceLink}
+              className="btn btn-ghost btn-xs font-mono text-base-content/60"
+              title={`View source (line ${symbol.location.line})`}
+            >
+              {"</>"}
+            </Link>
           )}
         </div>
         {symbol.signature && (
@@ -1168,16 +1191,49 @@ function SymbolCard({
 export function FileView() {
   const { slug = "", "*": filePath = "" } = useParams();
   const { data: model, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const { data: sources } = useAsync<SourcesManifest | undefined>(
+    () => fetchSources(slug),
+    [slug],
+  );
+  const [searchParams, setSearchParams] = useSearchParams();
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
     () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath) : undefined),
     [slug, symbolIndex, filePath],
+  );
+  const targets = useMemo(
+    () => (symbolIndex ? makeTargetResolver(symbolIndex, filePath) : undefined),
+    [symbolIndex, filePath],
   );
 
   if (loading) return <Loading />;
   const file = model?.files.find((f) => f.path === filePath);
   if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
   const symbols = flattenSymbols(file);
+
+  // Source viewer state lives in the URL so cross-file symbol links can open
+  // the panel focused on a declaration line (decision 0020).
+  const hasSnapshot =
+    file.format === "source" && (sources?.files.some((s) => s.path === filePath) ?? false);
+  const sourceOpen = hasSnapshot && searchParams.get("source") === "1";
+  const focusLine = Number(searchParams.get("line") ?? "") || undefined;
+  const openSource = (): void =>
+    setSearchParams(
+      (p) => {
+        p.set("source", "1");
+        return p;
+      },
+      { replace: true },
+    );
+  const closeSource = (): void =>
+    setSearchParams(
+      (p) => {
+        p.delete("source");
+        p.delete("line");
+        return p;
+      },
+      { replace: true },
+    );
 
   const breadcrumbs = (
     <div className="breadcrumbs text-sm">
@@ -1214,10 +1270,17 @@ export function FileView() {
     );
   }
 
-  return (
+  const doc = (
     <div>
       {breadcrumbs}
-      <h1 className="mb-3 font-mono text-xl font-bold">{file.path}</h1>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h1 className="font-mono text-xl font-bold">{file.path}</h1>
+        {hasSnapshot && !sourceOpen && (
+          <button type="button" className="btn btn-outline btn-xs" onClick={openSource}>
+            View source
+          </button>
+        )}
+      </div>
       {file.enrichment?.summary && (
         <p className="mb-1">
           <DocText text={file.enrichment.summary} resolve={resolve} />{" "}
@@ -1252,8 +1315,12 @@ export function FileView() {
                         {" — "}
                         {imp.names.map((n, j) => {
                           const bare = n.replace(/^\* as /, "");
-                          const anchor = target ? symbolIndex?.perFile.get(target)?.get(bare) : undefined;
-                          const href = anchor !== undefined ? fileHref(slug, target!, anchor) : resolve(bare);
+                          const imported = target
+                            ? symbolIndex?.perFile.get(target)?.get(bare)
+                            : undefined;
+                          const href = imported
+                            ? fileHref(slug, target!, imported.anchor)
+                            : resolve(bare);
                           return (
                             <span key={j}>
                               {j > 0 && ", "}
@@ -1279,8 +1346,30 @@ export function FileView() {
 
       <h2 className="mb-3 mt-6 text-lg font-semibold">Symbols ({symbols.length})</h2>
       {symbols.map((s) => (
-        <SymbolCard key={s.id} symbol={s} resolve={resolve} />
+        <SymbolCard
+          key={s.id}
+          symbol={s}
+          resolve={resolve}
+          sourceLink={hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name) : undefined}
+        />
       ))}
     </div>
+  );
+
+  if (!sourceOpen || !targets) return doc;
+
+  return (
+    <SplitSourceView
+      doc={doc}
+      panel={
+        <SourcePanel
+          slug={slug}
+          path={filePath}
+          focusLine={focusLine}
+          targets={targets}
+          onClose={closeSource}
+        />
+      }
+    />
   );
 }

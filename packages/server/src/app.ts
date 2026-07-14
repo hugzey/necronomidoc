@@ -75,10 +75,10 @@ function safeJoin(root: string, requestPath: string): string | null {
   return full.startsWith(resolve(root)) ? full : null;
 }
 
-function fileResponse(absPath: string): Response | null {
+function fileResponse(absPath: string, forcedType?: string): Response | null {
   if (!existsSync(absPath) || !statSync(absPath).isFile()) return null;
   return new Response(readFileSync(absPath), {
-    headers: { "content-type": contentType(absPath) },
+    headers: { "content-type": forcedType ?? contentType(absPath) },
   });
 }
 
@@ -149,6 +149,7 @@ export function createApp(config: NecronomidocConfig): App {
         ref: event.ref,
         commit: fetched.commitSha,
       },
+      trigger: event.provider,
     });
     return {
       fileCount: result.entry.fileCount,
@@ -319,6 +320,7 @@ export function createApp(config: NecronomidocConfig): App {
           target,
           name: body.name,
           ref: body.ref,
+          trigger: "rest",
         }),
       );
       store.reload(); // hot-reload manifests into the MCP handler
@@ -376,7 +378,10 @@ export function createApp(config: NecronomidocConfig): App {
     const t0 = Date.now();
     try {
       const { entry } = await queue.withRepoLock(slug, async () =>
-        publishModel(config.dataDir, model),
+        publishModel(config.dataDir, model, undefined, {
+          trigger: "external-ir",
+          adapter: "external-ir",
+        }),
       );
       recordBuild(config.dataDir, {
         repoId: slug,
@@ -556,7 +561,10 @@ export function createApp(config: NecronomidocConfig): App {
         abs === resolve(config.dataDir, "registry.json") ||
         abs.startsWith(resolve(config.dataDir, "repos") + sep);
       if (allowed) {
-        const res = fileResponse(abs);
+        // Source snapshots keep their real extensions (.ts, .py, …) — serve
+        // them as plain text so browsers display rather than download them.
+        const isSource = /^repos\/[^/]+\/sources\//.test(rel.replace(/\\/g, "/"));
+        const res = fileResponse(abs, isSource ? "text/plain; charset=utf-8" : undefined);
         if (res) return res;
       }
     }
