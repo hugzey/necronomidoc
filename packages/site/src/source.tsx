@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { fetchSourceText } from "./api.js";
+import { Loading, useAsync } from "./components.js";
 import { languageForPath, tokenizeLines, type Token } from "./highlight.js";
 import { sourceHref, type TargetResolver } from "./resolve.js";
 
@@ -24,11 +33,23 @@ const MAX_PCT = 75;
  * again via the panel's ✕.
  */
 export function SplitSourceView({ doc, panel }: { doc: ReactNode; panel: ReactNode }) {
-  const [pct, setPct] = useState(() => {
+  const initialPct = (() => {
     const v = Number(localStorage.getItem(SPLIT_KEY));
     return v >= MIN_PCT && v <= MAX_PCT ? v : 50;
-  });
+  })();
   const containerRef = useRef<HTMLDivElement>(null);
+  const docRef = useRef<HTMLDivElement>(null);
+
+  // Dragging writes the width style directly — a per-move React re-render of
+  // the whole doc column would make the drag visibly lag on big pages.
+  const applyPct = (pct: number): void => {
+    if (docRef.current) docRef.current.style.width = `${pct}%`;
+  };
+  const pctFromEvent = (e: PointerEvent<HTMLDivElement>): number => {
+    const rect = containerRef.current!.getBoundingClientRect();
+    const next = ((e.clientX - rect.left) / rect.width) * 100;
+    return Math.min(MAX_PCT, Math.max(MIN_PCT, next));
+  };
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     e.preventDefault();
@@ -36,22 +57,23 @@ export function SplitSourceView({ doc, panel }: { doc: ReactNode; panel: ReactNo
   };
   const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId) || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const next = ((e.clientX - rect.left) / rect.width) * 100;
-    setPct(Math.min(MAX_PCT, Math.max(MIN_PCT, next)));
+    applyPct(pctFromEvent(e));
   };
   const onPointerUp = (e: PointerEvent<HTMLDivElement>): void => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    setPct((v) => {
-      localStorage.setItem(SPLIT_KEY, String(Math.round(v)));
-      return v;
-    });
+    if (containerRef.current) {
+      localStorage.setItem(SPLIT_KEY, String(Math.round(pctFromEvent(e))));
+    }
   };
 
   return (
     <div ref={containerRef} className="lg:flex lg:items-start">
-      <div className="hidden min-w-0 lg:block lg:pr-3" style={{ width: `${pct}%` }}>
+      <div
+        ref={docRef}
+        className="hidden min-w-0 lg:block lg:pr-3"
+        style={{ width: `${initialPct}%` }}
+      >
         {doc}
       </div>
       <div
@@ -70,6 +92,14 @@ export function SplitSourceView({ doc, panel }: { doc: ReactNode; panel: ReactNo
   );
 }
 
+/** A display token: highlight class + optional cross-reference target. */
+interface RenderToken {
+  type: Token["type"];
+  text: string;
+  /** Href to the declaring symbol's doc page + source line, when resolved. */
+  href?: string;
+}
+
 export function SourcePanel({
   slug,
   path,
@@ -84,35 +114,53 @@ export function SourcePanel({
   targets: TargetResolver;
   onClose: () => void;
 }) {
-  const [text, setText] = useState<string>();
-  const [failed, setFailed] = useState(false);
+  const { data: text, loading } = useAsync(() => fetchSourceText(slug, path), [slug, path]);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
+  // Tokenize once per file and resolve every identifier's target up front, so
+  // re-renders (line focus, drawer state) never redo per-token work and the
+  // memoized lines stay referentially stable.
+  const lines = useMemo(() => {
+    if (text === undefined) return undefined;
+    return tokenizeLines(text, languageForPath(path)).map((tokens): RenderToken[] =>
+      tokens.map((t) => {
+        if (t.type !== "ident") return t;
+        const target = targets(t.text);
+        return target
+          ? { ...t, href: sourceHref(slug, target.path, target.line, target.anchor) }
+          : t;
+      }),
+    );
+  }, [text, path, slug, targets]);
+
+  // Scroll the focused line into view once the text is rendered — scrolling
+  // only the panel body, never the window (the page may already be positioned
+  // at a doc anchor).
   useEffect(() => {
-    let live = true;
-    setText(undefined);
-    setFailed(false);
-    fetchSourceText(slug, path).then((t) => {
-      if (!live) return;
-      if (t === undefined) setFailed(true);
-      else setText(t);
-    });
-    return () => {
-      live = false;
-    };
-  }, [slug, path]);
-
-  const lines = useMemo(
-    () => (text === undefined ? undefined : tokenizeLines(text, languageForPath(path))),
-    [text, path],
-  );
-
-  // Scroll the focused line into view once the text is rendered.
-  useEffect(() => {
-    if (!focusLine || !lines || !bodyRef.current) return;
-    const el = bodyRef.current.querySelector<HTMLElement>(`[data-line="${focusLine}"]`);
-    el?.scrollIntoView({ block: "center" });
+    const body = bodyRef.current;
+    if (!focusLine || !lines || !body) return;
+    const el = body.querySelector<HTMLElement>(`[data-line="${focusLine}"]`);
+    if (!el) return;
+    const bodyRect = body.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    body.scrollTop += elRect.top - bodyRect.top - (body.clientHeight - elRect.height) / 2;
   }, [focusLine, lines]);
+
+  // One delegated click handler navigates for every in-panel link, instead of
+  // thousands of <Link> components each subscribed to the location context.
+  const onBodyClick = (e: MouseEvent<HTMLDivElement>): void => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+      return;
+    const anchor = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[data-nav]");
+    if (!anchor) return;
+    e.preventDefault();
+    // Line-number permalinks carry no anchor of their own; keep the current
+    // hash so clearing it doesn't bounce the page back to the top.
+    const keepHash = anchor.dataset.keepHash === "1" ? location.hash : "";
+    navigate(anchor.getAttribute("data-nav")! + keepHash);
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-box border border-base-300 bg-base-100">
@@ -132,17 +180,13 @@ export function SourcePanel({
           ✕
         </button>
       </div>
-      <div ref={bodyRef} className="min-h-0 grow overflow-auto">
-        {failed && (
+      <div ref={bodyRef} className="min-h-0 grow overflow-auto" onClick={onBodyClick}>
+        {loading && <Loading />}
+        {!loading && lines === undefined && (
           <div className="p-4 text-sm text-base-content/60">
             No source snapshot for this file — it may predate the source viewer, exceed the
             snapshot size cap, or come from a pre-extracted IR upload. Rebuild the repo with a
             current server to publish one.
-          </div>
-        )}
-        {!failed && lines === undefined && (
-          <div className="flex justify-center p-10">
-            <span className="loading loading-spinner loading-md" aria-label="Loading source" />
           </div>
         )}
         {lines && (
@@ -153,9 +197,7 @@ export function SourcePanel({
                   key={i}
                   n={i + 1}
                   tokens={tokens}
-                  slug={slug}
-                  path={path}
-                  targets={targets}
+                  lineHref={sourceHref(slug, path, i + 1)}
                   focused={i + 1 === focusLine}
                 />
               ))}
@@ -167,64 +209,48 @@ export function SourcePanel({
   );
 }
 
-function SourceLine({
+/**
+ * One rendered source line. Memoized: on a focus change only the two lines
+ * whose `focused` flips re-render, not the whole file.
+ */
+const SourceLine = memo(function SourceLine({
   n,
   tokens,
-  slug,
-  path,
-  targets,
+  lineHref,
   focused,
 }: {
   n: number;
-  tokens: Token[];
-  slug: string;
-  path: string;
-  targets: TargetResolver;
+  tokens: RenderToken[];
+  lineHref: string;
   focused: boolean;
 }) {
   return (
     <div className={`src-line ${focused ? "src-line-focus" : ""}`} data-line={n}>
-      <Link
-        to={sourceHref(slug, path, n)}
+      <a
+        href={lineHref}
+        data-nav={lineHref}
+        data-keep-hash="1"
         className="src-lineno"
         aria-label={`Line ${n}`}
       >
         {n}
-      </Link>
+      </a>
       <span className="src-code">
-        {tokens.length === 0
-          ? "\n"
-          : tokens.map((t, i) => <TokenSpan key={i} token={t} slug={slug} targets={targets} />)}
-        {tokens.length > 0 && "\n"}
+        {tokens.map((t, i) =>
+          t.href ? (
+            <a key={i} href={t.href} data-nav={t.href} className="xref">
+              {t.text}
+            </a>
+          ) : t.type === "plain" || t.type === "ident" ? (
+            t.text
+          ) : (
+            <span key={i} className={`tok-${t.type}`}>
+              {t.text}
+            </span>
+          ),
+        )}
+        {"\n"}
       </span>
     </div>
   );
-}
-
-function TokenSpan({
-  token,
-  slug,
-  targets,
-}: {
-  token: Token;
-  slug: string;
-  targets: TargetResolver;
-}) {
-  if (token.type === "ident") {
-    const target = targets(token.text);
-    if (target) {
-      return (
-        <Link
-          to={sourceHref(slug, target.path, target.line, target.anchor)}
-          className="xref"
-          title={`${target.path}:${target.line}`}
-        >
-          {token.text}
-        </Link>
-      );
-    }
-    return <>{token.text}</>;
-  }
-  if (token.type === "plain") return <>{token.text}</>;
-  return <span className={`tok-${token.type}`}>{token.text}</span>;
-}
+});

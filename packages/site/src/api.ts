@@ -122,14 +122,29 @@ export async function fetchVersions(slug: string): Promise<VersionsManifest | un
   return getOptionalJson<VersionsManifest>(`/data/repos/${slug}/versions.json`);
 }
 
+/**
+ * `getJson`, but a manifest that legitimately doesn't exist (404 — repo built
+ * before the feature, or a path the server doesn't publish) degrades to
+ * undefined. Real failures (5xx, network) still throw so callers can tell
+ * "not published" apart from "couldn't load".
+ */
 async function getOptionalJson<T>(url: string): Promise<T | undefined> {
   if (cache.has(url)) return cache.get(url) as T;
   const res = await fetch(url);
-  if (!res.ok) return undefined;
+  if (res.status === 404) return undefined;
+  if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
   const data = (await res.json()) as T;
   cache.set(url, data);
   return data;
 }
+
+/**
+ * Source texts are up to 512 KiB each, so unlike the small JSON manifests
+ * they get a bounded cache: browsing a large repo must not pin every visited
+ * file's text in memory for the life of the tab.
+ */
+const sourceTextCache = new Map<string, string>();
+const SOURCE_TEXT_CACHE_MAX = 20;
 
 /**
  * One snapshotted source file's text, for the source viewer. Undefined when
@@ -138,11 +153,16 @@ async function getOptionalJson<T>(url: string): Promise<T | undefined> {
 export async function fetchSourceText(slug: string, path: string): Promise<string | undefined> {
   if (injectedData()) return undefined;
   const url = `/data/repos/${slug}/sources/${path.split("/").map(encodeURIComponent).join("/")}`;
-  if (cache.has(url)) return cache.get(url) as string;
+  const cached = sourceTextCache.get(url);
+  if (cached !== undefined) return cached;
   const res = await fetch(url);
   if (!res.ok) return undefined;
   const text = await res.text();
-  cache.set(url, text);
+  if (sourceTextCache.size >= SOURCE_TEXT_CACHE_MAX) {
+    // Maps iterate in insertion order — drop the oldest entry.
+    sourceTextCache.delete(sourceTextCache.keys().next().value!);
+  }
+  sourceTextCache.set(url, text);
   return text;
 }
 

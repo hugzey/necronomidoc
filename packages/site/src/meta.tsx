@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { fetchVersions, type DocVersionEntry, type VersionsManifest } from "./api.js";
+import { fetchVersions, type DocVersionEntry } from "./api.js";
+import { Loading, useAsync } from "./components.js";
 
 /**
  * The documentation info drawer (decision 0021): an (i) button at the top
@@ -38,21 +39,7 @@ export function RepoInfoDrawer({ slug }: { slug: string }) {
 }
 
 function InfoDrawer({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const [manifest, setManifest] = useState<VersionsManifest>();
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    fetchVersions(slug)
-      .then((m) => {
-        if (live) setManifest(m);
-      })
-      .finally(() => live && setLoading(false));
-    return () => {
-      live = false;
-    };
-  }, [slug]);
+  const { data: manifest, error, loading } = useAsync(() => fetchVersions(slug), [slug]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -81,12 +68,13 @@ function InfoDrawer({ slug, onClose }: { slug: string; onClose: () => void }) {
           </button>
         </div>
         <div className="min-h-0 grow overflow-y-auto p-4">
-          {loading && (
-            <div className="flex justify-center p-8">
-              <span className="loading loading-spinner loading-md" aria-label="Loading" />
+          {loading && <Loading />}
+          {!loading && error && (
+            <div className="alert alert-error text-sm">
+              <span>Couldn't load version info: {error}</span>
             </div>
           )}
-          {!loading && !current && (
+          {!loading && !error && !current && (
             <div className="alert alert-info text-sm">
               <span>
                 No version journal published for this repo yet — it was built before versioning

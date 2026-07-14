@@ -150,6 +150,9 @@ export function createApp(config: NecronomidocConfig): App {
         commit: fetched.commitSha,
       },
       trigger: event.provider,
+      // The build target is the server's own clone dir — record the repo URL
+      // as the journal's source, never the internal path.
+      source: repo.url,
     });
     return {
       fileCount: result.entry.fileCount,
@@ -557,13 +560,16 @@ export function createApp(config: NecronomidocConfig): App {
     const abs = safeJoin(config.dataDir, rel);
     if (abs) {
       // Allowlist on the *resolved* path so ../ tricks can't sidestep it.
+      const reposRoot = resolve(config.dataDir, "repos");
       const allowed =
-        abs === resolve(config.dataDir, "registry.json") ||
-        abs.startsWith(resolve(config.dataDir, "repos") + sep);
+        abs === resolve(config.dataDir, "registry.json") || abs.startsWith(reposRoot + sep);
       if (allowed) {
         // Source snapshots keep their real extensions (.ts, .py, …) — serve
-        // them as plain text so browsers display rather than download them.
-        const isSource = /^repos\/[^/]+\/sources\//.test(rel.replace(/\\/g, "/"));
+        // them as inert plain text so browsers display rather than download
+        // (or execute) them. Decided on the resolved path, like the
+        // allowlist, so no encoding trick can flip the content type.
+        const segments = abs.slice(reposRoot.length + 1).split(sep);
+        const isSource = segments.length > 2 && segments[1] === "sources";
         const res = fileResponse(abs, isSource ? "text/plain; charset=utf-8" : undefined);
         if (res) return res;
       }

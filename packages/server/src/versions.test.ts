@@ -79,6 +79,24 @@ describe("appendVersion", () => {
     });
   });
 
+  it("refreshes commit/trigger on an unchanged rebuild so provenance isn't stale", () => {
+    const v1 = appendVersion(empty, model(), "hash-a", { ...info, trigger: "cli" });
+    const rebuilt = appendVersion(
+      v1,
+      model({ repo: { name: "t", slug: "t", commit: "def456" } }),
+      "hash-a",
+      { ...info, trigger: "github" },
+      "2026-01-03T00:00:00.000Z",
+    );
+    expect(rebuilt.versions[0]).toMatchObject({
+      version: 1,
+      commit: "def456",
+      trigger: "github",
+      rebuilds: 1,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
   it("prepends a new version when the docs state changes", () => {
     const v1 = appendVersion(empty, model(), "hash-a", info, "2026-01-02T00:00:00.000Z");
     const next = appendVersion(v1, model(), "hash-b", info, "2026-01-03T00:00:00.000Z");

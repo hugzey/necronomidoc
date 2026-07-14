@@ -1,4 +1,12 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,6 +87,19 @@ describe("snapshotSources", () => {
   it("refuses paths that resolve outside the repo dir", () => {
     const manifest = snapshotSources(modelWith(["../escape.ts", "/etc/passwd"]), destDir, repoDir);
     expect(manifest.files).toEqual([]);
+  });
+
+  it("refuses a symlink whose target escapes the repo dir", () => {
+    const secretDir = mkdtempSync(join(tmpdir(), "necro-secret-"));
+    try {
+      writeFileSync(join(secretDir, "secret.ts"), "export const secret = 42;\n");
+      symlinkSync(join(secretDir, "secret.ts"), join(repoDir, "steal.ts"));
+      const manifest = snapshotSources(modelWith(["steal.ts"]), destDir, repoDir);
+      expect(manifest.files).toEqual([]);
+    } finally {
+      rmSync(secretDir, { recursive: true, force: true });
+      rmSync(join(repoDir, "steal.ts"), { force: true });
+    }
   });
 
   it("publishes an empty manifest when there is no repo dir (external IR)", () => {

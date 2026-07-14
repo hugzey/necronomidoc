@@ -70,6 +70,12 @@ export interface BuildOptions {
   adapterConfig?: Partial<AdapterConfig>;
   /** What started the build, for the version journal (default `cli`). */
   trigger?: string;
+  /**
+   * Canonical origin recorded in the version journal. Set it when `target`
+   * is a server-internal checkout (the ingest clone dir) so the public
+   * journal names the repo URL, never a data-dir path.
+   */
+  source?: string;
 }
 
 /** Provenance a publish records into the version journal (decision 0021). */
@@ -232,7 +238,7 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     const { model: merged, entry } = publishModel(dataDir, model, repoDir, {
       trigger: options.trigger ?? "cli",
       adapter,
-      source: repoUrl ?? repoDir,
+      source: options.source ?? repoUrl ?? repoDir,
     });
     return { model: merged, entry, adapter };
   } finally {

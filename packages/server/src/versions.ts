@@ -87,8 +87,15 @@ export function appendVersion(
 ): VersionsManifest {
   const [current, ...rest] = prev.versions;
   if (current && current.docsHash === docsHash) {
+    // Same docs state reproduced. Refresh the build provenance to the run
+    // that just verified it (a new commit can rebuild identical docs) so the
+    // drawer never presents a stale commit as the current build's origin;
+    // `generatedAt` keeps when this state first appeared.
     const touched: DocVersionEntry = {
       ...current,
+      commit: model.repo.commit ?? current.commit,
+      ref: model.repo.ref ?? current.ref,
+      trigger: info.trigger ?? current.trigger,
       lastRebuiltAt: now,
       rebuilds: current.rebuilds + 1,
     };

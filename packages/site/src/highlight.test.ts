@@ -73,6 +73,26 @@ describe("tokenizeLine", () => {
     expect(close.next).toEqual({ kind: "none" });
   });
 
+  it("does not treat quotes as strings in unknown ('plain') languages", () => {
+    // A shell/SQL line with an apostrophe must not swallow the rest as a string.
+    const { tokens } = tokenizeLine("echo don't run deployStack", "plain");
+    expect(tokens.some((t) => t.type === "str")).toBe(false);
+    expect(tokens.filter((t) => t.type === "ident").map((t) => t.text)).toContain("deployStack");
+  });
+
+  it("scans number literals without gluing on following punctuation", () => {
+    // The old char-class loop glued "0x12" onto ".toString"; the sticky regex
+    // stops at the number so the trailing identifier stays linkable.
+    const chain = tokenizeLine("const s = 0x12.toString();", "ts");
+    expect(chain.tokens.find((t) => t.type === "num")?.text).toBe("0x12");
+    expect(chain.tokens.filter((t) => t.type === "ident").map((t) => t.text)).toContain("toString");
+    const hex = tokenizeLine("const n = 0xFF_00 + 1.5e3;", "ts");
+    expect(hex.tokens.filter((t) => t.type === "num").map((t) => t.text)).toEqual([
+      "0xFF_00",
+      "1.5e3",
+    ]);
+  });
+
   it("handles csharp keywords", () => {
     const { tokens } = tokenizeLine("public sealed record Point(int X);", "csharp");
     expect(tokens.filter((t) => t.type === "kw").map((t) => t.text)).toEqual([

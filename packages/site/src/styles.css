@@ -50,28 +50,14 @@ a.xref code {
 
 /* ---- Source viewer (decision 0020) ---- */
 
-/* Syntax token palette. Light theme is the default; the dark palette applies
-   under the OS preference and under an explicit data-theme="dark", matching
-   how daisyUI's themes are configured above. */
+/* Syntax token palette. daisyUI sets `color-scheme` per theme (light/dark),
+   so `light-dark()` picks the right value for both the OS preference and an
+   explicit data-theme toggle from a single declaration. */
 :root {
-  --tok-kw: oklch(0.45 0.22 300); /* keywords: violet */
-  --tok-str: oklch(0.5 0.14 145); /* strings: green */
-  --tok-com: oklch(0.55 0.03 250); /* comments: muted slate */
-  --tok-num: oklch(0.5 0.15 50); /* numbers: amber-brown */
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --tok-kw: oklch(0.75 0.15 300);
-    --tok-str: oklch(0.78 0.12 145);
-    --tok-com: oklch(0.62 0.02 250);
-    --tok-num: oklch(0.78 0.12 60);
-  }
-}
-:root[data-theme="dark"] {
-  --tok-kw: oklch(0.75 0.15 300);
-  --tok-str: oklch(0.78 0.12 145);
-  --tok-com: oklch(0.62 0.02 250);
-  --tok-num: oklch(0.78 0.12 60);
+  --tok-kw: light-dark(oklch(0.45 0.22 300), oklch(0.75 0.15 300)); /* keywords: violet */
+  --tok-str: light-dark(oklch(0.5 0.14 145), oklch(0.78 0.12 145)); /* strings: green */
+  --tok-com: light-dark(oklch(0.55 0.03 250), oklch(0.62 0.02 250)); /* comments: slate */
+  --tok-num: light-dark(oklch(0.5 0.15 50), oklch(0.78 0.12 60)); /* numbers: amber */
 }
 
 .tok-kw {

@@ -1,5 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, Outlet, useLocation, useMatch, useParams, useSearchParams } from "react-router-dom";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useMatch,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   fetchArtefacts,
   fetchCoreDocs,
@@ -31,10 +48,12 @@ import {
   CodeText,
   DocText,
   KindBadge,
+  Loading,
   ProvenanceBadge,
   ScopeBadge,
   ScrollToAnchor,
   Sidebar,
+  useAsync,
 } from "./components.js";
 import { MarkdownDoc } from "./markdown.js";
 import { RepoInfoDrawer } from "./meta.js";
@@ -52,35 +71,16 @@ import {
 import { buildSiteIndex } from "./search.js";
 import { SourcePanel, SplitSourceView } from "./source.js";
 
-function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data?: T; error?: string; loading: boolean } {
-  const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
-  useEffect(() => {
-    let live = true;
-    // Keep the previous data while refetching so polled views (StatusView)
-    // update in place instead of flashing back to a spinner.
-    setState((s) => ({ ...s, loading: true }));
-    fn()
-      .then((data) => live && setState({ data, loading: false }))
-      .catch(
-        (err: unknown) => live && setState((s) => ({ data: s.data, error: String(err), loading: false })),
-      );
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return state;
-}
-
-function Loading() {
-  return (
-    <div className="flex justify-center p-10">
-      <span className="loading loading-spinner loading-md" aria-label="Loading" />
-    </div>
-  );
-}
-
 // ---- Layout: drawer with sidebar (persistent on lg, overlay below) ----
+
+/**
+ * The active page reports whether it needs the full-viewport width (the file
+ * page in split-source mode). Driving it from real child state — not by
+ * sniffing the URL — keeps Layout correct when the panel is suppressed
+ * (no snapshot, prose file, still loading).
+ */
+const WideLayoutContext = createContext<(wide: boolean) => void>(() => {});
+export const useWideLayout = (): ((wide: boolean) => void) => useContext(WideLayoutContext);
 
 export function Layout() {
   const match = useMatch("/r/:slug/*");
@@ -94,10 +94,7 @@ export function Layout() {
   );
   const drawerRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
-  const [searchParams] = useSearchParams();
-  // The doc column stays readable-width; with the source panel open the file
-  // page needs the whole viewport for its split view.
-  const wide = fileMatch !== null && searchParams.get("source") === "1";
+  const [wide, setWide] = useState(false);
   useEffect(() => {
     if (drawerRef.current) drawerRef.current.checked = false;
   }, [location]);
@@ -119,7 +116,9 @@ export function Layout() {
         <main className={`relative mx-auto w-full ${wide ? "max-w-none" : "max-w-4xl"} px-5 py-8`}>
           <ScrollToAnchor />
           {slug && <RepoInfoDrawer slug={slug} />}
-          <Outlet />
+          <WideLayoutContext.Provider value={setWide}>
+            <Outlet />
+          </WideLayoutContext.Provider>
         </main>
       </div>
       <div className="drawer-side">
@@ -1188,6 +1187,37 @@ function SymbolCard({
   );
 }
 
+/**
+ * The file's symbol cards. Memoized so navigating the source panel (which
+ * only changes `?line=`) doesn't re-render every card and its DocText.
+ */
+const SymbolList = memo(function SymbolList({
+  symbols,
+  resolve,
+  slug,
+  filePath,
+  hasSnapshot,
+}: {
+  symbols: DocSymbolShape[];
+  resolve: SymbolResolver;
+  slug: string;
+  filePath: string;
+  hasSnapshot: boolean;
+}) {
+  return (
+    <>
+      {symbols.map((s) => (
+        <SymbolCard
+          key={s.id}
+          symbol={s}
+          resolve={resolve}
+          sourceLink={hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name) : undefined}
+        />
+      ))}
+    </>
+  );
+});
+
 export function FileView() {
   const { slug = "", "*": filePath = "" } = useParams();
   const { data: model, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
@@ -1195,7 +1225,9 @@ export function FileView() {
     () => fetchSources(slug),
     [slug],
   );
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
     () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath) : undefined),
@@ -1206,34 +1238,46 @@ export function FileView() {
     [symbolIndex, filePath],
   );
 
-  if (loading) return <Loading />;
-  const file = model?.files.find((f) => f.path === filePath);
-  if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
-  const symbols = flattenSymbols(file);
+  // O(1) snapshot lookups instead of scanning sources.files each render.
+  const snapshotPaths = useMemo(
+    () => new Set(sources?.files.map((s) => s.path)),
+    [sources],
+  );
 
+  const file = model?.files.find((f) => f.path === filePath);
+  // Stable ref so the memoized symbol list doesn't re-render on line focus.
+  const symbols = useMemo(() => (file ? flattenSymbols(file) : []), [file]);
   // Source viewer state lives in the URL so cross-file symbol links can open
   // the panel focused on a declaration line (decision 0020).
-  const hasSnapshot =
-    file.format === "source" && (sources?.files.some((s) => s.path === filePath) ?? false);
+  const hasSnapshot = file?.format === "source" && snapshotPaths.has(filePath);
   const sourceOpen = hasSnapshot && searchParams.get("source") === "1";
+
+  // Drive the layout width from the real panel state, not the URL, so a
+  // `?source=1` link to a file with no snapshot never widens to an empty page.
+  const setWide = useWideLayout();
+  useEffect(() => {
+    setWide(sourceOpen);
+    return () => setWide(false);
+  }, [setWide, sourceOpen]);
+
+  if (loading) return <Loading />;
+  if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
+
   const focusLine = Number(searchParams.get("line") ?? "") || undefined;
-  const openSource = (): void =>
-    setSearchParams(
-      (p) => {
-        p.set("source", "1");
-        return p;
-      },
-      { replace: true },
-    );
-  const closeSource = (): void =>
-    setSearchParams(
-      (p) => {
-        p.delete("source");
-        p.delete("line");
-        return p;
-      },
-      { replace: true },
-    );
+  // Toggle the panel while keeping the current hash: setSearchParams drops it,
+  // which would fire ScrollToAnchor and bounce the page to the top.
+  const setSource = (open: boolean): void => {
+    const p = new URLSearchParams(searchParams);
+    if (open) p.set("source", "1");
+    else {
+      p.delete("source");
+      p.delete("line");
+    }
+    const search = p.toString();
+    navigate({ search: search ? `?${search}` : "", hash: location.hash }, { replace: true });
+  };
+  const openSource = (): void => setSource(true);
+  const closeSource = (): void => setSource(false);
 
   const breadcrumbs = (
     <div className="breadcrumbs text-sm">
@@ -1345,14 +1389,13 @@ export function FileView() {
       )}
 
       <h2 className="mb-3 mt-6 text-lg font-semibold">Symbols ({symbols.length})</h2>
-      {symbols.map((s) => (
-        <SymbolCard
-          key={s.id}
-          symbol={s}
-          resolve={resolve}
-          sourceLink={hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name) : undefined}
-        />
-      ))}
+      <SymbolList
+        symbols={symbols}
+        resolve={resolve}
+        slug={slug}
+        filePath={filePath}
+        hasSnapshot={hasSnapshot}
+      />
     </div>
   );
 

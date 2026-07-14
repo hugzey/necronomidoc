@@ -184,7 +184,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
 
   try {
     const config: AdapterConfig = { repoName: name, repoUrl, ref: options.ref };
-    const { model } = await extractRepoModel(repoDir, config);
+    const { model, adapter } = await extractRepoModel(repoDir, config);
     const slug = model.repo.slug;
     const enrichmentDir = join(dataDir, "enrichment", slug);
     const overlays = loadOverlays(overlayDirsFor(dataDir, repoDir, slug));
@@ -253,7 +253,11 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
     if (!options.dryRun) {
       if (newOverlays.length > 0) persistLlmOverlays(enrichmentDir, newOverlays);
       // Republish even when nothing changed: the report + subsystems refresh.
-      publishModel(dataDir, model, repoDir, { trigger: "enrich" });
+      publishModel(dataDir, model, repoDir, {
+        trigger: "enrich",
+        adapter,
+        source: repoUrl ?? repoDir,
+      });
       published = true;
     }
 
@@ -408,7 +412,7 @@ export async function importEnrichResults(
     ref: options.ref,
   });
   try {
-    const { model } = await extractRepoModel(repoDir, {
+    const { model, adapter } = await extractRepoModel(repoDir, {
       repoName: name,
       repoUrl,
       ref: options.ref,
@@ -428,7 +432,11 @@ export async function importEnrichResults(
     if (applied.subsystems && applied.subsystems.length > 0) {
       persistLlmSubsystems(enrichmentDir, applied.subsystems);
     }
-    publishModel(dataDir, model, repoDir, { trigger: "enrich" });
+    publishModel(dataDir, model, repoDir, {
+      trigger: "enrich",
+      adapter,
+      source: repoUrl ?? repoDir,
+    });
 
     return {
       slug,

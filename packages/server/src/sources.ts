@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   SCHEMA_VERSION,
@@ -34,16 +34,20 @@ export function snapshotSources(
 ): SourcesManifest {
   const files: SourceFileEntry[] = [];
   if (repoDir) {
-    const root = resolve(repoDir);
+    const root = realpathSync(resolve(repoDir));
     const sourcesDir = paths.sourcesDir(destDir);
     for (const file of model.files) {
       if (file.format !== "source") continue;
-      // Paths come from adapters over this same checkout, but resolve-check
-      // anyway so a hostile model can never read outside the repo dir.
-      const abs = resolve(root, file.path);
-      if (abs !== root && !abs.startsWith(root + sep)) continue;
+      // Paths come from adapters over this same checkout, but containment-
+      // check anyway so a hostile model can never read outside the repo dir.
+      const lexical = resolve(root, file.path);
+      if (lexical !== root && !lexical.startsWith(root + sep)) continue;
       let content: Buffer;
       try {
+        // realpath so a committed symlink can't smuggle out files beyond the
+        // checkout (e.g. another repo's clone) — readFileSync follows links.
+        const abs = realpathSync(lexical);
+        if (abs !== root && !abs.startsWith(root + sep)) continue;
         if (statSync(abs).size > MAX_SOURCE_FILE_BYTES) continue;
         content = readFileSync(abs);
       } catch {

@@ -70,6 +70,8 @@ const KEYWORDS: Partial<Record<Language, Set<string>>> = {
 const IDENT_START = /[A-Za-z_$]/;
 const IDENT_CHAR = /[A-Za-z0-9_$]/;
 const DIGIT = /[0-9]/;
+const NUMBER_RE =
+  /0[xXbBoO][0-9a-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?/y;
 
 /** Tokenize a whole file: one token array per line. */
 export function tokenizeLines(text: string, lang: Language): Token[][] {
@@ -180,24 +182,26 @@ export function tokenizeLine(
       i = end + 1;
       continue;
     }
-    if (ch === '"' || ch === "'") {
+    // Unknown languages get identifier links only — a lone apostrophe in a
+    // shell script or SQL comment must not swallow the rest of the line.
+    if ((ch === '"' || ch === "'") && lang !== "plain") {
       const end = scanStringEnd(line, i + 1, ch);
       push("str", line.slice(i, end + 1));
       i = end + 1;
       continue;
     }
 
-    // Numbers (good enough: digits, hex, dots, exponents, separators).
+    // Numbers: hex/binary/octal literals, decimals with fraction/exponent,
+    // underscore separators. One sticky regex beats a char-class loop that
+    // would glue `1..5` or `0x12.foo` into a single token.
     if (DIGIT.test(ch) || (ch === "." && DIGIT.test(line[i + 1] ?? ""))) {
-      let j = i + 1;
-      while (j < line.length && /[0-9a-fA-FxXoObB_.eE+-]/.test(line[j]!)) {
-        // `+`/`-` only continue a number straight after an exponent marker.
-        if ((line[j] === "+" || line[j] === "-") && !/[eE]/.test(line[j - 1]!)) break;
-        j++;
+      NUMBER_RE.lastIndex = i;
+      const match = NUMBER_RE.exec(line);
+      if (match) {
+        push("num", match[0]);
+        i += match[0].length;
+        continue;
       }
-      push("num", line.slice(i, j));
-      i = j;
-      continue;
     }
 
     // Identifiers / keywords.
