@@ -26,9 +26,18 @@ the model itself.
    prepend the next version; hash unchanged → bump `lastRebuiltAt`/
    `rebuilds` on the current entry. `contentHash` (`repoContentHash`) is
    recorded alongside so pure-curation versions are distinguishable from
-   code changes. The journal keeps 50 versions; it records metadata, not
-   archived manifest content (point-in-time recovery stays a data-dir
-   snapshot concern, decision 0002's fs-only state).
+   code changes. The journal keeps 50 metadata entries.
+2a. **Past versions are previewable, within a retention window.** Each new
+   version's published content (doc model + source snapshots + core docs) is
+   archived under `repos/<slug>/versions/<N>/`, staged into the same atomic
+   swap (previous archives carried forward, pruned to the newest
+   `ARCHIVE_KEEP` = 10). An `archived` flag on each journal entry marks what
+   is retained. The site serves a read-only historical view (`?docv=N`) that
+   sources the whole doc surface — file inventory, symbols, and the source
+   viewer — from the archive, with navigation kept sticky to the version.
+   This supersedes the original "metadata only, no content archive" scope;
+   full point-in-time recovery of *all* builds remains a data-dir snapshot
+   concern (decision 0002's fs-only state).
 3. **Surfaced by an (i) info drawer on every repo doc page.** Right-hand
    drawer, two clearly separated sections: current-build metadata, then
    version history. Server-published manifest + one fetch — no new API

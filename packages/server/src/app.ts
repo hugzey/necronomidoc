@@ -567,9 +567,13 @@ export function createApp(config: NecronomidocConfig): App {
         // Source snapshots keep their real extensions (.ts, .py, …) — serve
         // them as inert plain text so browsers display rather than download
         // (or execute) them. Decided on the resolved path, like the
-        // allowlist, so no encoding trick can flip the content type.
+        // allowlist, so no encoding trick can flip the content type. Covers
+        // both the live snapshot (`<slug>/sources/…`) and archived versions
+        // (`<slug>/versions/<n>/sources/…`).
         const segments = abs.slice(reposRoot.length + 1).split(sep);
-        const isSource = segments.length > 2 && segments[1] === "sources";
+        const isSource =
+          (segments.length > 2 && segments[1] === "sources") ||
+          (segments.length > 4 && segments[1] === "versions" && segments[3] === "sources");
         const res = fileResponse(abs, isSource ? "text/plain; charset=utf-8" : undefined);
         if (res) return res;
       }

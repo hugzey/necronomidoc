@@ -56,7 +56,7 @@ import {
   useAsync,
 } from "./components.js";
 import { MarkdownDoc } from "./markdown.js";
-import { RepoInfoDrawer } from "./meta.js";
+import { HistoricalBanner, RepoInfoDrawer } from "./meta.js";
 import { ApiReference } from "./openapi.js";
 import {
   anchorForSymbol,
@@ -754,13 +754,18 @@ export function ArtefactsView() {
 
 export function RepoView() {
   const { slug = "" } = useParams();
-  const { data: model, error, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const [searchParams] = useSearchParams();
+  const version = Number(searchParams.get("docv") ?? "") || undefined;
+  const { data: model, error, loading } = useAsync<DocModel>(
+    () => fetchModel(slug, version),
+    [slug, version],
+  );
   const [query, setQuery] = useState("");
   const searchIndex = useMemo(() => (model ? buildSiteIndex(model) : undefined), [model]);
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
-    () => (symbolIndex ? makeResolver(slug, symbolIndex) : undefined),
-    [slug, symbolIndex],
+    () => (symbolIndex ? makeResolver(slug, symbolIndex, undefined, version) : undefined),
+    [slug, symbolIndex, version],
   );
   const results = useMemo(
     () => (searchIndex && query ? searchIndex.search(query).slice(0, 25) : []),
@@ -773,6 +778,9 @@ export function RepoView() {
 
   return (
     <div>
+      {version && (
+        <HistoricalBanner slug={slug} version={version} currentHref={`/r/${slug}`} />
+      )}
       <h1 className="mb-4 text-2xl font-bold">{model.repo.name}</h1>
       <label className="input w-full">
         <svg className="h-4 w-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -795,6 +803,7 @@ export function RepoView() {
                   slug,
                   r.path,
                   r.type === "symbol" ? anchorForSymbol(r.kind, r.name) : undefined,
+                  version,
                 )}
               >
                 <KindBadge kind={String(r.kind ?? r.type)} />
@@ -826,7 +835,7 @@ export function RepoView() {
               {model.files.map((f) => (
                 <tr key={f.id}>
                   <td className="whitespace-nowrap align-top">
-                    <Link to={fileHref(slug, f.path)} className="link-hover link font-mono text-sm">
+                    <Link to={fileHref(slug, f.path, undefined, version)} className="link-hover link font-mono text-sm">
                       {f.path}
                     </Link>
                   </td>
@@ -1197,12 +1206,14 @@ const SymbolList = memo(function SymbolList({
   slug,
   filePath,
   hasSnapshot,
+  version,
 }: {
   symbols: DocSymbolShape[];
   resolve: SymbolResolver;
   slug: string;
   filePath: string;
   hasSnapshot: boolean;
+  version?: number;
 }) {
   return (
     <>
@@ -1211,7 +1222,9 @@ const SymbolList = memo(function SymbolList({
           key={s.id}
           symbol={s}
           resolve={resolve}
-          sourceLink={hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name) : undefined}
+          sourceLink={
+            hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name, version) : undefined
+          }
         />
       ))}
     </>
@@ -1220,18 +1233,24 @@ const SymbolList = memo(function SymbolList({
 
 export function FileView() {
   const { slug = "", "*": filePath = "" } = useParams();
-  const { data: model, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
-  const { data: sources } = useAsync<SourcesManifest | undefined>(
-    () => fetchSources(slug),
-    [slug],
-  );
   const [searchParams] = useSearchParams();
+  // A historical preview (`?docv=N`) loads that version's archived model +
+  // source snapshots instead of the live ones (decision 0021).
+  const version = Number(searchParams.get("docv") ?? "") || undefined;
+  const { data: model, loading } = useAsync<DocModel>(
+    () => fetchModel(slug, version),
+    [slug, version],
+  );
+  const { data: sources } = useAsync<SourcesManifest | undefined>(
+    () => fetchSources(slug, version),
+    [slug, version],
+  );
   const navigate = useNavigate();
   const location = useLocation();
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
-    () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath) : undefined),
-    [slug, symbolIndex, filePath],
+    () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath, version) : undefined),
+    [slug, symbolIndex, filePath, version],
   );
   const targets = useMemo(
     () => (symbolIndex ? makeTargetResolver(symbolIndex, filePath) : undefined),
@@ -1261,7 +1280,23 @@ export function FileView() {
   }, [setWide, sourceOpen]);
 
   if (loading) return <Loading />;
-  if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
+  if (!file || !resolve) {
+    // In a historical preview the file may simply not exist in that version
+    // (added later) — point back to the current docs rather than blame a build.
+    if (version) {
+      return (
+        <div>
+          <HistoricalBanner slug={slug} version={version} currentHref={fileHref(slug, filePath)} />
+          <div className="alert alert-warning">
+            <span>
+              <code>{filePath}</code> isn't part of <strong>v{version}</strong>.
+            </span>
+          </div>
+        </div>
+      );
+    }
+    return <div className="alert alert-error">File not found: {filePath}</div>;
+  }
 
   const focusLine = Number(searchParams.get("line") ?? "") || undefined;
   // Toggle the panel while keeping the current hash: setSearchParams drops it,
@@ -1317,6 +1352,9 @@ export function FileView() {
   const doc = (
     <div>
       {breadcrumbs}
+      {version && (
+        <HistoricalBanner slug={slug} version={version} currentHref={fileHref(slug, filePath)} />
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="font-mono text-xl font-bold">{file.path}</h1>
         {hasSnapshot && !sourceOpen && (
@@ -1363,7 +1401,7 @@ export function FileView() {
                             ? symbolIndex?.perFile.get(target)?.get(bare)
                             : undefined;
                           const href = imported
-                            ? fileHref(slug, target!, imported.anchor)
+                            ? fileHref(slug, target!, imported.anchor, version)
                             : resolve(bare);
                           return (
                             <span key={j}>
@@ -1395,6 +1433,7 @@ export function FileView() {
         slug={slug}
         filePath={filePath}
         hasSnapshot={hasSnapshot}
+        version={version}
       />
     </div>
   );
@@ -1410,6 +1449,7 @@ export function FileView() {
           path={filePath}
           focusLine={focusLine}
           targets={targets}
+          version={version}
           onClose={closeSource}
         />
       }

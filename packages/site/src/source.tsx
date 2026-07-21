@@ -105,6 +105,7 @@ export function SourcePanel({
   path,
   focusLine,
   targets,
+  version,
   onClose,
 }: {
   slug: string;
@@ -112,9 +113,14 @@ export function SourcePanel({
   /** 1-based line to scroll to and highlight (`?line=` in the URL). */
   focusLine?: number;
   targets: TargetResolver;
+  /** Historical preview version (`?docv=N`); undefined = live source. */
+  version?: number;
   onClose: () => void;
 }) {
-  const { data: text, loading } = useAsync(() => fetchSourceText(slug, path), [slug, path]);
+  const { data: text, loading } = useAsync(
+    () => fetchSourceText(slug, path, version),
+    [slug, path, version],
+  );
   const bodyRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -129,11 +135,11 @@ export function SourcePanel({
         if (t.type !== "ident") return t;
         const target = targets(t.text);
         return target
-          ? { ...t, href: sourceHref(slug, target.path, target.line, target.anchor) }
+          ? { ...t, href: sourceHref(slug, target.path, target.line, target.anchor, version) }
           : t;
       }),
     );
-  }, [text, path, slug, targets]);
+  }, [text, path, slug, targets, version]);
 
   // Scroll the focused line into view once the text is rendered — scrolling
   // only the panel body, never the window (the page may already be positioned
@@ -197,7 +203,7 @@ export function SourcePanel({
                   key={i}
                   n={i + 1}
                   tokens={tokens}
-                  lineHref={sourceHref(slug, path, i + 1)}
+                  lineHref={sourceHref(slug, path, i + 1, undefined, version)}
                   focused={i + 1 === focusLine}
                 />
               ))}

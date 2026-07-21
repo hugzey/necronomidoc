@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { fetchVersions, type DocVersionEntry } from "./api.js";
 import { Loading, useAsync } from "./components.js";
 
@@ -40,6 +41,18 @@ export function RepoInfoDrawer({ slug }: { slug: string }) {
 
 function InfoDrawer({ slug, onClose }: { slug: string; onClose: () => void }) {
   const { data: manifest, error, loading } = useAsync(() => fetchVersions(slug), [slug]);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Open a version's preview: keep the current file if we're on a file page,
+  // otherwise land on the repo overview at that version. The newest version is
+  // the live docs, so it clears `docv` instead of pinning a redundant preview.
+  const openVersion = (entry: DocVersionEntry, isCurrent: boolean): void => {
+    const onFile = location.pathname.startsWith(`/r/${slug}/f/`);
+    const base = onFile ? location.pathname : `/r/${slug}`;
+    navigate(isCurrent ? base : `${base}?docv=${entry.version}`);
+    onClose();
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -90,9 +103,17 @@ function InfoDrawer({ slug, onClose }: { slug: string; onClose: () => void }) {
               <h3 className="mb-2 text-xs font-medium uppercase text-base-content/50">
                 Version history
               </h3>
+              <p className="mb-2 text-xs text-base-content/50">
+                Select a version to preview its docs and source.
+              </p>
               <ol className="flex flex-col gap-3">
                 {manifest!.versions.map((v, i) => (
-                  <VersionRow key={v.version} entry={v} current={i === 0} />
+                  <VersionRow
+                    key={v.version}
+                    entry={v}
+                    current={i === 0}
+                    onOpen={() => openVersion(v, i === 0)}
+                  />
                 ))}
               </ol>
             </>
@@ -177,14 +198,27 @@ function Metadata({ entry }: { entry: DocVersionEntry }) {
   );
 }
 
-function VersionRow({ entry, current }: { entry: DocVersionEntry; current: boolean }) {
-  return (
-    <li className="rounded-box border border-base-300 p-3 text-sm">
+function VersionRow({
+  entry,
+  current,
+  onOpen,
+}: {
+  entry: DocVersionEntry;
+  current: boolean;
+  onOpen: () => void;
+}) {
+  // Only versions whose content is still retained can be previewed; the
+  // current one is always available (it's the live state).
+  const previewable = current || entry.archived;
+  const body = (
+    <>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`badge badge-sm ${current ? "badge-primary" : "badge-ghost"}`}>
           v{entry.version}
         </span>
         {current && <span className="text-xs text-base-content/50">current</span>}
+        {!current && previewable && <span className="text-xs text-primary">preview →</span>}
+        {!previewable && <span className="text-xs text-base-content/40">not retained</span>}
         <span className="ml-auto text-xs text-base-content/60">{when(entry.generatedAt)}</span>
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-base-content/70">
@@ -196,6 +230,61 @@ function VersionRow({ entry, current }: { entry: DocVersionEntry; current: boole
         <span className="font-mono text-base-content/50">{shortHash(entry.docsHash)}</span>
         {entry.rebuilds > 0 && <span>{entry.rebuilds}× rebuilt unchanged</span>}
       </div>
+    </>
+  );
+  if (!previewable) {
+    return (
+      <li
+        className="rounded-box border border-base-300 p-3 text-sm opacity-60"
+        title="This version's content is no longer retained for preview"
+      >
+        {body}
+      </li>
+    );
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full rounded-box border border-base-300 p-3 text-left text-sm transition-colors hover:border-primary hover:bg-base-200"
+      >
+        {body}
+      </button>
     </li>
+  );
+}
+
+/**
+ * A banner shown while previewing a historical version, with a link back to
+ * the live docs. Pulls the version's date/commit from the journal.
+ */
+export function HistoricalBanner({
+  slug,
+  version,
+  currentHref,
+}: {
+  slug: string;
+  version: number;
+  currentHref: string;
+}) {
+  const { data: manifest } = useAsync(() => fetchVersions(slug), [slug]);
+  const entry = manifest?.versions.find((v) => v.version === version);
+  return (
+    <div className="alert alert-warning mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
+      <span>
+        Previewing <strong>v{version}</strong> (historical)
+        {entry?.generatedAt && <> · {new Date(entry.generatedAt).toLocaleDateString()}</>}
+        {entry?.commit && (
+          <>
+            {" · "}
+            <code>{entry.commit.slice(0, 8)}</code>
+          </>
+        )}
+      </span>
+      <Link to={currentHref} className="btn btn-xs ml-auto">
+        View current
+      </Link>
+    </div>
   );
 }

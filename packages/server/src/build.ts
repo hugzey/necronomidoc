@@ -26,7 +26,13 @@ import {
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 import { ensureDataDirVersion } from "./datadir.js";
 import { snapshotSources } from "./sources.js";
-import { appendVersion, computeDocsHash, readVersions, writeVersions } from "./versions.js";
+import {
+  appendVersion,
+  computeDocsHash,
+  readVersions,
+  stageVersionArchives,
+  writeVersions,
+} from "./versions.js";
 
 /** Every adapter that detects the repo runs; their file lists are combined. */
 const ADAPTERS: DocAdapter[] = [
@@ -196,9 +202,11 @@ export function publishModel(
   const report = computeEnrichmentReport(merged);
 
   const entry = registryEntryFor(merged, report);
+  const finalDir = paths.repoDir(dataDir, merged.repo.slug);
   publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report }, (tmpDir) => {
-    // Source snapshots + version journal are staged into the same tmp dir so
-    // the atomic swap publishes everything (or nothing) together.
+    // Source snapshots + version journal + per-version archive are staged into
+    // the same tmp dir so the atomic swap publishes everything (or nothing)
+    // together.
     const sources = snapshotSources(merged, tmpDir, repoDir);
     const docsHash = computeDocsHash(merged, subsystems, coreDocs);
     const versions = appendVersion(readVersions(dataDir, merged.repo.slug), merged, docsHash, {
@@ -210,6 +218,9 @@ export function publishModel(
       fileCount: entry.fileCount,
       symbolCount: entry.symbolCount,
     });
+    // Carry/prune the per-version content archive and stamp `archived` flags,
+    // then write the journal reflecting what is previewable.
+    stageVersionArchives(tmpDir, finalDir, versions);
     writeVersions(tmpDir, versions);
   });
   upsertRegistry(dataDir, entry);

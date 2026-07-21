@@ -5,19 +5,30 @@ import type { DocFile, DocModel, DocSymbolShape } from "./api.js";
  * URLs so documentation text can hyperlink to the thing it mentions.
  */
 
-/** Href to a file page, optionally anchored at a symbol. */
-export function fileHref(slug: string, path: string, anchor?: string): string {
-  return `/r/${slug}/f/${path}${anchor ? `#${anchor}` : ""}`;
+/** Href to a file page, optionally anchored at a symbol. `version` keeps a
+ *  historical preview (`?docv=N`) sticky across navigation. */
+export function fileHref(slug: string, path: string, anchor?: string, version?: number): string {
+  const query = version ? `?docv=${version}` : "";
+  return `/r/${slug}/f/${path}${query}${anchor ? `#${anchor}` : ""}`;
 }
 
 /**
  * Href to a file page with the source panel open, optionally focused on a
  * line (1-based) and anchored at a symbol's doc card. `source=1` is the
- * open-panel flag FileView reads from the query string.
+ * open-panel flag FileView reads from the query string; `version` keeps the
+ * historical preview sticky.
  */
-export function sourceHref(slug: string, path: string, line?: number, anchor?: string): string {
-  const query = `?source=1${line ? `&line=${line}` : ""}`;
-  return `/r/${slug}/f/${path}${query}${anchor ? `#${anchor}` : ""}`;
+export function sourceHref(
+  slug: string,
+  path: string,
+  line?: number,
+  anchor?: string,
+  version?: number,
+): string {
+  const params = new URLSearchParams({ source: "1" });
+  if (line) params.set("line", String(line));
+  if (version) params.set("docv", String(version));
+  return `/r/${slug}/f/${path}?${params.toString()}${anchor ? `#${anchor}` : ""}`;
 }
 
 /**
@@ -90,11 +101,13 @@ export function makeResolver(
   slug: string,
   index: SymbolIndex,
   currentPath?: string,
+  /** Keep cross-reference links inside a historical preview (`?docv=N`). */
+  version?: number,
 ): SymbolResolver {
   const targets = makeTargetResolver(index, currentPath);
   return (name) => {
     const target = targets(name);
-    return target ? fileHref(slug, target.path, target.anchor) : undefined;
+    return target ? fileHref(slug, target.path, target.anchor, version) : undefined;
   };
 }
 

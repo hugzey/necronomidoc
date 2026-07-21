@@ -480,6 +480,13 @@ export const DocVersionEntry = z.object({
   lastRebuiltAt: z.string().optional(),
   /** Rebuilds since `generatedAt` that reproduced this same state. */
   rebuilds: z.number().int().nonnegative().default(0),
+  /**
+   * True when this version's published state (doc model + source snapshots +
+   * core docs) is retained under `repos/<slug>/versions/<version>/` and can be
+   * previewed. Older versions past the archive cap keep their metadata but
+   * drop to `false`.
+   */
+  archived: z.boolean().default(false),
 });
 export type DocVersionEntry = z.infer<typeof DocVersionEntry>;
 

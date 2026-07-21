@@ -25,6 +25,11 @@ export const paths = {
   sources: (repoDir: string) => join(repoDir, "sources.json"),
   sourcesDir: (repoDir: string) => join(repoDir, "sources"),
   versions: (repoDir: string) => join(repoDir, "versions.json"),
+  /** Root of the per-version content archive (decision 0021). */
+  versionArchiveRoot: (repoDir: string) => join(repoDir, "versions"),
+  /** One archived version's retained manifests + source snapshots. */
+  versionArchiveDir: (repoDir: string, version: number) =>
+    join(repoDir, "versions", String(version)),
 };
 
 function countSymbols(model: DocModel): number {

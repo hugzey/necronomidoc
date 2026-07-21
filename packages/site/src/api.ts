@@ -70,13 +70,27 @@ export function fetchRegistry(): Promise<Registry> {
   return getJson<Registry>("/data/registry.json");
 }
 
-export function fetchModel(slug: string): Promise<DocModel> {
+/**
+ * Base path for a repo's manifests. With a `version`, points at that version's
+ * retained archive (`repos/<slug>/versions/<n>/`) for historical preview;
+ * otherwise the live published state.
+ */
+function repoBase(slug: string, version?: number): string {
+  return version ? `/data/repos/${slug}/versions/${version}` : `/data/repos/${slug}`;
+}
+
+/**
+ * The repo's doc model. With `version`, loads that version's archived model —
+ * historical preview isn't available in static-export mode, so the current
+ * injected model is returned instead.
+ */
+export function fetchModel(slug: string, version?: number): Promise<DocModel> {
   const injected = injectedData();
   if (injected) {
     const model = injected.models[slug];
     return model ? Promise.resolve(model) : Promise.reject(new Error(`no model for ${slug}`));
   }
-  return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
+  return getJson<DocModel>(`${repoBase(slug, version)}/docmodel.json`);
 }
 
 /**
@@ -108,9 +122,12 @@ export async function fetchCoreDocs(slug: string): Promise<CoreDocsManifest | un
  * static-export mode and for repos built before the source viewer shipped —
  * both return undefined so the "View source" button simply doesn't render.
  */
-export async function fetchSources(slug: string): Promise<SourcesManifest | undefined> {
+export async function fetchSources(
+  slug: string,
+  version?: number,
+): Promise<SourcesManifest | undefined> {
   if (injectedData()) return undefined;
-  return getOptionalJson<SourcesManifest>(`/data/repos/${slug}/sources.json`);
+  return getOptionalJson<SourcesManifest>(`${repoBase(slug, version)}/sources.json`);
 }
 
 /**
@@ -150,9 +167,14 @@ const SOURCE_TEXT_CACHE_MAX = 20;
  * One snapshotted source file's text, for the source viewer. Undefined when
  * the snapshot is missing (pre-viewer build, size-capped file, static export).
  */
-export async function fetchSourceText(slug: string, path: string): Promise<string | undefined> {
+export async function fetchSourceText(
+  slug: string,
+  path: string,
+  version?: number,
+): Promise<string | undefined> {
   if (injectedData()) return undefined;
-  const url = `/data/repos/${slug}/sources/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const rel = path.split("/").map(encodeURIComponent).join("/");
+  const url = `${repoBase(slug, version)}/sources/${rel}`;
   const cached = sourceTextCache.get(url);
   if (cached !== undefined) return cached;
   const res = await fetch(url);

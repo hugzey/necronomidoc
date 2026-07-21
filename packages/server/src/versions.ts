@@ -1,4 +1,14 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 import {
   SCHEMA_VERSION,
   VersionsManifest,
@@ -19,8 +29,19 @@ import { paths } from "@necronomidoc/mcp";
  * other per-repo manifests and served at `/data/repos/<slug>/versions.json`.
  */
 
-/** Versions kept per repo — a browsable history, not a full archive. */
+/** Metadata entries kept per repo — a browsable history. */
 export const VERSIONS_KEEP = 50;
+
+/**
+ * How many versions keep their full published content (doc model + source
+ * snapshots + core docs) archived for preview. Full source copies are heavy,
+ * so this is a smaller window than the metadata journal — older versions keep
+ * their metadata but become non-previewable.
+ */
+export const ARCHIVE_KEEP = 10;
+
+/** Per-version manifests copied into the archive (small; the bulk is sources/). */
+const ARCHIVED_MANIFESTS = ["docmodel.json", "coredocs.json", "subsystems.json", "sources.json"];
 
 /**
  * Hash of the published documentation state: the merged files (facts +
@@ -116,12 +137,81 @@ export function appendVersion(
     enrichment: info.enrichment,
     sourceFileCount: info.sourceFileCount,
     rebuilds: 0,
+    // Stamped for real by stageVersionArchives once the archive is written.
+    archived: false,
   };
   return {
     schemaVersion: SCHEMA_VERSION,
     repo: model.repo.slug,
     versions: [entry, ...prev.versions].slice(0, VERSIONS_KEEP),
   };
+}
+
+/**
+ * Archive the published content per version so past versions can be previewed
+ * (decision 0021). Runs inside the atomic swap's staging step, before the
+ * rename dance, so `finalDir` still holds the previous publish:
+ *
+ * 1. carry the previous archives forward into the tmp dir (the swap replaces
+ *    the whole repo dir, so anything not re-staged is lost);
+ * 2. archive the current build's content under `versions/<N>/` if it's a new
+ *    version (an unchanged rebuild reuses the carried-forward copy);
+ * 3. prune to the newest `ARCHIVE_KEEP` versions;
+ * 4. stamp each journal entry's `archived` flag from what actually remains.
+ *
+ * Mutates `versions.versions[*].archived`; the caller writes the journal after.
+ */
+export function stageVersionArchives(
+  tmpDir: string,
+  finalDir: string,
+  versions: VersionsManifest,
+): void {
+  const tmpArchiveRoot = paths.versionArchiveRoot(tmpDir);
+
+  // 1. Carry forward existing archives (a cheap-ish copy, bounded by the cap).
+  const prevArchiveRoot = paths.versionArchiveRoot(finalDir);
+  if (existsSync(prevArchiveRoot)) {
+    for (const name of readdirSync(prevArchiveRoot)) {
+      if (!/^\d+$/.test(name)) continue;
+      cpSync(join(prevArchiveRoot, name), join(tmpArchiveRoot, name), { recursive: true });
+    }
+  }
+
+  // 2. Archive the current version's content if it isn't already present
+  //    (unchanged rebuilds keep the same version number and reuse the copy).
+  const current = versions.versions[0];
+  if (current) {
+    const dest = paths.versionArchiveDir(tmpDir, current.version);
+    if (!existsSync(dest)) {
+      mkdirSync(dest, { recursive: true });
+      for (const name of ARCHIVED_MANIFESTS) {
+        const src = join(tmpDir, name);
+        if (existsSync(src)) copyFileSync(src, join(dest, name));
+      }
+      const srcSources = paths.sourcesDir(tmpDir);
+      if (existsSync(srcSources)) {
+        cpSync(srcSources, paths.sourcesDir(dest), { recursive: true });
+      }
+    }
+  }
+
+  // 3. Prune to the newest ARCHIVE_KEEP versions the journal still lists.
+  const keep = new Set(versions.versions.slice(0, ARCHIVE_KEEP).map((v) => v.version));
+  if (existsSync(tmpArchiveRoot)) {
+    for (const name of readdirSync(tmpArchiveRoot)) {
+      if (!keep.has(Number(name))) {
+        rmSync(join(tmpArchiveRoot, name), { recursive: true, force: true });
+      }
+    }
+  }
+
+  // 4. Stamp `archived` from what actually remains on disk.
+  const present = new Set(
+    existsSync(tmpArchiveRoot)
+      ? readdirSync(tmpArchiveRoot).filter((n) => /^\d+$/.test(n)).map(Number)
+      : [],
+  );
+  for (const v of versions.versions) v.archived = present.has(v.version);
 }
 
 /** Write the journal into a (staged) repo manifest dir. */

@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,6 +142,45 @@ describe("version journal across real builds", () => {
       expect(after.versions[0]!.docsHash).not.toBe(after.versions[1]!.docsHash);
       expect(after.versions[0]!.enrichment).toBeDefined();
       expect(after.versions[0]!.sourceFileCount).toBeGreaterThan(0);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("archives each version's content, carries it across rebuilds, and prunes", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "necro-arc-data-"));
+    const work = mkdtempSync(join(tmpdir(), "necro-arc-work-"));
+    try {
+      cpSync(fixture, work, { recursive: true });
+      const repoDir = join(dataDir, "repos", "sample");
+      const archived = (n: number): string => join(repoDir, "versions", String(n));
+      const read = (): VersionsManifest =>
+        JSON.parse(readFileSync(join(repoDir, "versions.json"), "utf8"));
+
+      // v1
+      await buildRepo({ dataDir, target: work, name: "sample" });
+      expect(existsSync(join(archived(1), "docmodel.json"))).toBe(true);
+      expect(existsSync(join(archived(1), "sources", "src", "utils", "format.ts"))).toBe(true);
+      expect(read().versions[0]).toMatchObject({ version: 1, archived: true });
+
+      // Unchanged rebuild keeps v1's archive intact (no v2).
+      await buildRepo({ dataDir, target: work, name: "sample" });
+      expect(existsSync(archived(1))).toBe(true);
+      expect(existsSync(archived(2))).toBe(false);
+
+      // v2: a real change. v1's archive is carried across the atomic swap.
+      writeFileSync(join(work, "src", "extra.ts"), "/** Extra. */\nexport const extra = 1;\n");
+      await buildRepo({ dataDir, target: work, name: "sample" });
+      expect(read().versions.map((v) => v.version)).toEqual([2, 1]);
+      expect(existsSync(archived(1))).toBe(true);
+      expect(existsSync(archived(2))).toBe(true);
+      // v1's archived model must NOT contain the file added in v2.
+      const v1model = JSON.parse(readFileSync(join(archived(1), "docmodel.json"), "utf8")) as DocModel;
+      const v2model = JSON.parse(readFileSync(join(archived(2), "docmodel.json"), "utf8")) as DocModel;
+      expect(v1model.files.some((f) => f.path === "src/extra.ts")).toBe(false);
+      expect(v2model.files.some((f) => f.path === "src/extra.ts")).toBe(true);
+      expect(read().versions.every((v) => v.archived)).toBe(true);
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
       rmSync(work, { recursive: true, force: true });
