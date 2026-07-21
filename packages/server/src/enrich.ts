@@ -145,11 +145,15 @@ function persistLlmCoreDocs(enrichmentDir: string, docs: LlmCoreDoc[]): void {
 }
 
 /** Persist an LLM-proposed subsystem map for review (whole-map semantics). */
-function persistLlmSubsystems(enrichmentDir: string, subsystems: unknown[]): void {
+function persistLlmSubsystems(
+  enrichmentDir: string,
+  subsystems: unknown[],
+  overview?: string,
+): void {
   mkdirSync(enrichmentDir, { recursive: true });
   writeFileSync(
     join(enrichmentDir, LLM_SUBSYSTEMS_FILE),
-    JSON.stringify(subsystems, null, 2) + "\n",
+    JSON.stringify({ subsystems, overview }, null, 2) + "\n",
   );
 }
 
@@ -213,7 +217,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       report.calls++;
       report.inputTokens += proposal.inputTokens;
       report.outputTokens += proposal.outputTokens;
-      persistLlmSubsystems(enrichmentDir, proposal.subsystems);
+      persistLlmSubsystems(enrichmentDir, proposal.subsystems, proposal.overview);
       subsystemsProposed = proposal.subsystems.length;
     }
 
@@ -426,7 +430,7 @@ export async function importEnrichResults(
     if (applied.coreDocs.length > 0) persistLlmCoreDocs(enrichmentDir, applied.coreDocs);
     // An empty proposal must not wipe a previously reviewed map.
     if (applied.subsystems && applied.subsystems.length > 0) {
-      persistLlmSubsystems(enrichmentDir, applied.subsystems);
+      persistLlmSubsystems(enrichmentDir, applied.subsystems, applied.subsystemsOverview);
     }
     publishModel(dataDir, model, repoDir);
 

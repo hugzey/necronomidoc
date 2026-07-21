@@ -211,6 +211,31 @@ export const tools = {
           : dirs.some((d) => path === d || path.startsWith(`${d.replace(/\/+$/, "")}/`));
 
       const FILES_MAX = 30;
+      // Name/inbound-edge indexes over the WHOLE map, so a scoped query still
+      // reports who references the selected subsystems (both-way relationships).
+      const nameById = new Map(manifest.subsystems.map((s) => [s.id, s.name]));
+      const inboundById = new Map<string, { from: string; fromId: string; relation: string }[]>();
+      for (const s of manifest.subsystems) {
+        for (const r of s.related) {
+          if (!r.to || !nameById.has(r.to)) continue;
+          const list = inboundById.get(r.to) ?? [];
+          list.push({ from: s.name, fromId: s.id, relation: r.relation });
+          inboundById.set(r.to, list);
+        }
+      }
+      // Keep the pre-existing `{ name, relation }` shape (name = the target's
+      // display label) and add `to` = the internal subsystem id when the edge
+      // resolves, so old consumers keep working and new ones can navigate.
+      const namedRelated = (rel: typeof manifest.subsystems[number]["related"]) =>
+        rel.map((r) => {
+          const internal = r.to && nameById.has(r.to);
+          return {
+            name: internal ? nameById.get(r.to!) : r.name,
+            ...(internal ? { to: r.to } : {}),
+            relation: r.relation,
+          };
+        });
+
       const selected = manifest.subsystems.filter(
         (s) =>
           !prefix ||
@@ -228,7 +253,8 @@ export const tools = {
             owns: s.owns,
             doesNotOwn: s.notOwns,
             entryPoints: s.entryPoints,
-            related: s.related,
+            related: namedRelated(s.related),
+            referencedBy: inboundById.get(s.id) ?? [],
             dirs: s.dirs,
             provenance: s.provenance,
             fileCount: owned.length,
@@ -244,6 +270,7 @@ export const tools = {
           repo: args.repo,
           scope: prefix ?? "(whole repo)",
           curated: manifest.subsystems.some((s) => s.provenance !== "heuristic"),
+          ...(manifest.overview ? { overview: manifest.overview } : {}),
           subsystems,
           ...(prefix ? {} : { filesOutsideAnySubsystem: unclaimed }),
         };

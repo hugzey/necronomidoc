@@ -173,40 +173,32 @@ will self-heal.
 ## Subsystem overviews
 
 A subsystem is a named group of directories with a purpose, boundary
-statements ("owns X / does not own Y"), entry points, and relationships —
-exactly what agents need for "where does auth live and what shouldn't go in
-it?" questions (`get_subsystem_overview`, indexed by `search_docs`, rendered
-on the site's **Subsystems** page).
+statements ("owns X / does not own Y"), entry points, and relationships to
+other subsystems — exactly what agents need for "where does auth live and what
+shouldn't go in it?" questions. The published map also carries a repo-level
+**overview** narrative and an **architecture diagram**, and every reference is
+hyperlinked both ways (subsystem ↔ subsystem, file ↔ subsystem).
 
-Sources, highest precedence wins (the winning source defines the whole map):
+Sources follow the same precedence as all enrichment — highest present wins and
+defines the whole map:
 
-1. **human** — `.necronomidoc/subsystems.yaml` in the repo (or
-   `data/enrichment/<slug>/subsystems.yaml` server-side):
-
-   ```yaml
-   subsystems:
-     - id: auth
-       name: Auth
-       purpose: Owns login, sessions and tokens.
-       owns: [session issuance, token refresh]
-       notOwns: [user profile data — that lives in accounts]
-       entryPoints: [src/auth/index.ts]
-       dirs: [src/auth]
-       related:
-         - name: api
-           relation: issues the tokens api attaches to requests
-   ```
-
-2. **llm** — proposals from `enrich --subsystems`, written to
-   `data/enrichment/<slug>/subsystems.llm.json` for review. Promote a good
-   proposal by copying it into a `subsystems.yaml`.
-3. **heuristic** — one subsystem per top-level directory (the always-present
-   floor).
+1. **human** — `.necronomidoc/subsystems.yaml` (or server-side
+   `data/enrichment/<slug>/subsystems.yaml`).
+2. **llm** — `enrich --subsystems` proposals, written to
+   `data/enrichment/<slug>/subsystems.llm.json` for review. The model clusters
+   from file summaries, exported symbols and the import graph, and writes the
+   overview too.
+3. **heuristic** — import-graph clustering (the always-present floor): files
+   grouped by directory cohesion, with edges, entry points and a diagram all
+   derived from actual imports.
 
 ```bash
-# ask the model to propose a subsystem map (1 extra call)
+# ask the model to propose a subsystem map + overview (1 extra call)
 node packages/cli/dist/index.js enrich <target> --subsystems
 ```
+
+The full model, the `related.to` relationship syntax, the diagram override and
+the curation workflow are documented in **[Subsystems](subsystems.md)**.
 
 ## Measuring MCP answer quality
 

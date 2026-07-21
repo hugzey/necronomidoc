@@ -186,10 +186,33 @@ export type EnrichmentOverlay = z.infer<typeof EnrichmentOverlay>;
 // ---- Subsystems (slice 3) ----
 
 /**
+ * A directed relationship from one subsystem to another (or to something
+ * outside the map). `to` is the id of the target subsystem when the edge stays
+ * inside the repo — that is what makes the link bidirectional (the target can
+ * list its inbound edges) and gives the architecture diagram a real edge.
+ * `name` is a free-text label, used as a fallback for external relationships
+ * (a SaaS, another repo) that have no id, and kept for backward compatibility
+ * with maps written before `to` existed. At least one of the two is required.
+ */
+export const RelatedSubsystem = z
+  .object({
+    /** Id of the related subsystem within this repo (enables both-way links). */
+    to: z.string().optional(),
+    /** Display label; fallback for external relationships and legacy maps. */
+    name: z.string().optional(),
+    /** How the two relate, e.g. "renders state exposed by hooks". */
+    relation: z.string(),
+  })
+  .refine((r) => r.to !== undefined || r.name !== undefined, {
+    message: "related entry needs `to` (a subsystem id) or `name`",
+  });
+export type RelatedSubsystem = z.infer<typeof RelatedSubsystem>;
+
+/**
  * A named group of files/directories with a purpose statement and explicit
  * boundaries — the separation-of-concerns context agents need to avoid
  * duplicate implementations. Sourced with the usual precedence: human
- * `subsystems.yaml` > LLM-proposed > heuristic (top-level directories).
+ * `subsystems.yaml` > LLM-proposed > heuristic (import-graph clustering).
  */
 export const Subsystem = z.object({
   /** Stable slug id, unique within a repo. */
@@ -203,8 +226,8 @@ export const Subsystem = z.object({
   notOwns: z.array(z.string()).default([]),
   /** Key entry points (file paths or exported symbol names). */
   entryPoints: z.array(z.string()).default([]),
-  /** Relationships to other subsystems. */
-  related: z.array(z.object({ name: z.string(), relation: z.string() })).default([]),
+  /** Relationships to other subsystems (directed, `to` an id when internal). */
+  related: z.array(RelatedSubsystem).default([]),
   /** Directory prefixes (repo-relative) whose files belong to this subsystem. */
   dirs: z.array(z.string()).default([]),
   provenance: Provenance.default("heuristic"),
@@ -216,6 +239,19 @@ export const SubsystemsManifest = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   repo: z.string(),
   subsystems: z.array(Subsystem).default([]),
+  /**
+   * Repo-level narrative — how the subsystems fit into the larger picture.
+   * Shown atop the Subsystems page. Sourced by the same precedence as the map.
+   */
+  overview: z.string().optional(),
+  overviewProvenance: Provenance.optional(),
+  /**
+   * Architecture diagram as a Mermaid definition. A curated `diagram:` in the
+   * subsystems file wins; otherwise it is generated from the relationship graph
+   * so every repo — even an uncurated one — gets a diagram.
+   */
+  diagram: z.string().optional(),
+  diagramProvenance: Provenance.optional(),
   generatedAt: z.string().optional(),
 });
 export type SubsystemsManifest = z.infer<typeof SubsystemsManifest>;

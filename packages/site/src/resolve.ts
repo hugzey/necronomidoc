@@ -10,6 +10,46 @@ export function fileHref(slug: string, path: string, anchor?: string): string {
   return `/r/${slug}/f/${path}${anchor ? `#${anchor}` : ""}`;
 }
 
+/** Href to the Subsystems page, optionally anchored at one subsystem card. */
+export function subsystemHref(slug: string, id?: string): string {
+  return `/r/${slug}/subsystems${id ? `#${id}` : ""}`;
+}
+
+/**
+ * The subsystem that owns a file. A file explicitly listed as a subsystem's
+ * entry point belongs to it even when it sits outside that subsystem's `dirs`
+ * (a headline entry file often lives at the package root). Otherwise ownership
+ * is the longest matching `dirs` prefix (a nested dir wins over a broad one);
+ * dir-less subsystems own repo-root files. Returns undefined when nothing
+ * claims the path.
+ */
+export function subsystemForFile<T extends { id: string; dirs: string[]; entryPoints?: string[] }>(
+  path: string,
+  subsystems: T[],
+): T | undefined {
+  // An explicit entry-point declaration is the strongest ownership signal.
+  const byEntry = subsystems.find((s) => s.entryPoints?.includes(path));
+  if (byEntry) return byEntry;
+
+  let best: T | undefined;
+  let bestLen = -1;
+  for (const s of subsystems) {
+    if (s.dirs.length === 0) {
+      // Dir-less subsystems own repo-root files; first one declared wins.
+      if (!path.includes("/") && best === undefined) best = s;
+      continue;
+    }
+    for (const d of s.dirs) {
+      const dir = d.replace(/\/+$/, "");
+      if ((path === dir || path.startsWith(`${dir}/`)) && dir.length > bestLen) {
+        best = s;
+        bestLen = dir.length;
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * The DOM anchor a symbol's card/heading renders with — must match how each
  * page renders ids: code symbols anchor by name (SymbolCard), markdown

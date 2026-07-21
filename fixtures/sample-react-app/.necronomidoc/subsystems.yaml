@@ -1,6 +1,19 @@
 # Human-curated subsystem map for the sample app (slice 3).
 # Defines the COMPLETE map: when this file exists, it replaces LLM proposals
-# and the heuristic directory grouping.
+# and the heuristic import-graph grouping.
+#
+# `overview` is the repo-level narrative shown atop the Subsystems page.
+# `related[].to` points at another subsystem's `id` — that makes the link
+# bidirectional (the target shows an inbound "referenced by" edge) and draws a
+# real arrow in the architecture diagram, which is generated from these edges
+# unless a top-level `diagram:` Mermaid override is supplied.
+overview: >
+  The sample app is a thin **UI** shell over a shared **State hooks** layer and
+  a set of pure **Utilities**. The UI renders state the hooks own and formats it
+  with the utils; neither the hooks nor the utils import back into the UI, so the
+  dependency graph stays acyclic and the presentation layer is the only place
+  React lives.
+
 subsystems:
   - id: ui
     name: UI
@@ -16,8 +29,10 @@ subsystems:
     dirs:
       - src/components
     related:
-      - name: state
+      - to: state
         relation: renders state exposed by the hooks subsystem
+      - to: utils
+        relation: formats values for display with the util helpers
 
   - id: state
     name: State hooks
@@ -43,3 +58,8 @@ subsystems:
       - src/utils/format.ts
     dirs:
       - src/utils
+    related:
+      # A name-only relationship (no `to`) documents an external dependency —
+      # it stays plain text and is left out of the generated diagram.
+      - name: Intl (platform)
+        relation: delegates number/date formatting to the ECMAScript Intl API

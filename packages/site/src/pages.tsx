@@ -34,7 +34,7 @@ import {
   ScrollToAnchor,
   Sidebar,
 } from "./components.js";
-import { MarkdownDoc } from "./markdown.js";
+import { MarkdownDoc, MermaidBlock } from "./markdown.js";
 import { ApiReference } from "./openapi.js";
 import {
   anchorForSymbol,
@@ -42,6 +42,8 @@ import {
   fileHref,
   makeResolver,
   resolveImport,
+  subsystemForFile,
+  subsystemHref,
   type SymbolResolver,
 } from "./resolve.js";
 import { buildSiteIndex } from "./search.js";
@@ -911,10 +913,16 @@ function SubsystemCard({
   subsystem,
   slug,
   files,
+  nameById,
+  referencedBy,
 }: {
   subsystem: Subsystem;
   slug: string;
   files: DocModel["files"];
+  /** id → display name for every subsystem, so `related.to` renders a label. */
+  nameById: Map<string, string>;
+  /** Inbound edges: which subsystems point at this one, and how. */
+  referencedBy: { fromId: string; relation: string }[];
 }) {
   const owned = files.filter((f) =>
     subsystem.dirs.length === 0
@@ -922,7 +930,7 @@ function SubsystemCard({
       : subsystem.dirs.some((d) => f.path === d || f.path.startsWith(`${d.replace(/\/+$/, "")}/`)),
   );
   return (
-    <div className="card card-border mb-4 bg-base-100" id={subsystem.id}>
+    <div className="card card-border mb-4 scroll-mt-20 bg-base-100" id={subsystem.id}>
       <div className="card-body gap-2 p-5">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-lg font-semibold">{subsystem.name}</h2>
@@ -940,7 +948,7 @@ function SubsystemCard({
           <div className="grid gap-3 sm:grid-cols-2">
             {subsystem.owns.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-medium text-success">Owns</h3>
+                <h3 className="mb-1 text-sm font-medium text-success">In scope (owns)</h3>
                 <ul className="list-inside list-disc text-sm text-base-content/80">
                   {subsystem.owns.map((o, i) => (
                     <li key={i}>{o}</li>
@@ -950,7 +958,7 @@ function SubsystemCard({
             )}
             {subsystem.notOwns.length > 0 && (
               <div>
-                <h3 className="mb-1 text-sm font-medium text-error">Does not own</h3>
+                <h3 className="mb-1 text-sm font-medium text-error">Out of scope (does not own)</h3>
                 <ul className="list-inside list-disc text-sm text-base-content/80">
                   {subsystem.notOwns.map((o, i) => (
                     <li key={i}>{o}</li>
@@ -982,9 +990,35 @@ function SubsystemCard({
         )}
         {subsystem.related.length > 0 && (
           <ul className="text-sm text-base-content/70">
-            {subsystem.related.map((r, i) => (
+            {subsystem.related.map((r, i) => {
+              // Internal edges (`to` names a subsystem) link to that card;
+              // external, name-only relationships render as plain text.
+              const label = r.to ? (nameById.get(r.to) ?? r.to) : r.name;
+              return (
+                <li key={i}>
+                  →{" "}
+                  {r.to && nameById.has(r.to) ? (
+                    <Link to={subsystemHref(slug, r.to)} className="xref font-medium">
+                      {label}
+                    </Link>
+                  ) : (
+                    <span className="font-medium">{label}</span>
+                  )}{" "}
+                  — {r.relation}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {referencedBy.length > 0 && (
+          <ul className="text-sm text-base-content/60">
+            {referencedBy.map((r, i) => (
               <li key={i}>
-                ↔ <span className="font-medium">{r.name}</span> — {r.relation}
+                ←{" "}
+                <Link to={subsystemHref(slug, r.fromId)} className="xref font-medium">
+                  {nameById.get(r.fromId) ?? r.fromId}
+                </Link>{" "}
+                — {r.relation}
               </li>
             ))}
           </ul>
@@ -1038,16 +1072,57 @@ export function SubsystemsView() {
   }
 
   const curated = manifest.subsystems.some((s) => s.provenance !== "heuristic");
+  const nameById = new Map(manifest.subsystems.map((s) => [s.id, s.name]));
+  // Invert `related` once so each card can show who points at it (both ways).
+  const inbound = new Map<string, { fromId: string; relation: string }[]>();
+  for (const s of manifest.subsystems) {
+    for (const r of s.related) {
+      if (!r.to || !nameById.has(r.to)) continue;
+      const list = inbound.get(r.to) ?? [];
+      list.push({ fromId: s.id, relation: r.relation });
+      inbound.set(r.to, list);
+    }
+  }
   return (
     <div>
+      <ScrollToAnchor />
       <h1 className="mb-1 text-2xl font-bold">Subsystems</h1>
-      <p className="mb-6 text-base-content/60">
+      <p className="mb-4 text-base-content/60">
         {curated
           ? "What each part of this repo owns — and what does not belong in it."
-          : "Heuristic grouping by top-level directory. Curate .necronomidoc/subsystems.yaml for real boundaries."}
+          : "Heuristic grouping from the import graph. Curate .necronomidoc/subsystems.yaml for real boundaries."}
       </p>
+      {manifest.overview && (
+        <div className="mb-6 rounded-box border border-base-300 bg-base-100 p-5">
+          <div className="mb-1 flex items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-base-content/60">
+              How it fits together
+            </h2>
+            <ProvenanceBadge provenance={manifest.overviewProvenance} />
+          </div>
+          <MarkdownDoc content={manifest.overview} slug={slug} files={model?.files ?? []} />
+        </div>
+      )}
+      {manifest.diagram && (
+        <div className="mb-6 rounded-box border border-base-300 bg-base-100 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-base-content/60">
+              Architecture
+            </h2>
+            <ProvenanceBadge provenance={manifest.diagramProvenance} />
+          </div>
+          <MermaidBlock code={manifest.diagram} />
+        </div>
+      )}
       {manifest.subsystems.map((s) => (
-        <SubsystemCard key={s.id} subsystem={s} slug={slug} files={model?.files ?? []} />
+        <SubsystemCard
+          key={s.id}
+          subsystem={s}
+          slug={slug}
+          files={model?.files ?? []}
+          nameById={nameById}
+          referencedBy={inbound.get(s.id) ?? []}
+        />
       ))}
     </div>
   );
@@ -1168,6 +1243,10 @@ function SymbolCard({
 export function FileView() {
   const { slug = "", "*": filePath = "" } = useParams();
   const { data: model, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const { data: subsystems } = useAsync<SubsystemsManifest | undefined>(
+    () => fetchSubsystems(slug),
+    [slug],
+  );
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
     () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath) : undefined),
@@ -1179,18 +1258,31 @@ export function FileView() {
   if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
   const symbols = flattenSymbols(file);
 
+  // The subsystem that claims this file (both-way link back to the map).
+  const owningSubsystem = subsystems
+    ? subsystemForFile(file.path, subsystems.subsystems)
+    : undefined;
+
   const breadcrumbs = (
-    <div className="breadcrumbs text-sm">
-      <ul>
-        <li>
-          <Link to={`/r/${slug}`}>{model!.repo.name}</Link>
-        </li>
-        {filePath.split("/").map((seg, i, all) => (
-          <li key={i} className={i === all.length - 1 ? "font-medium" : "text-base-content/60"}>
-            {seg}
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+      <div className="breadcrumbs text-sm">
+        <ul>
+          <li>
+            <Link to={`/r/${slug}`}>{model!.repo.name}</Link>
           </li>
-        ))}
-      </ul>
+          {filePath.split("/").map((seg, i, all) => (
+            <li key={i} className={i === all.length - 1 ? "font-medium" : "text-base-content/60"}>
+              {seg}
+            </li>
+          ))}
+        </ul>
+      </div>
+      {owningSubsystem && (
+        <Link to={subsystemHref(slug, owningSubsystem.id)} className="badge badge-ghost gap-1">
+          <span className="text-base-content/50">subsystem:</span>
+          {owningSubsystem.name}
+        </Link>
+      )}
     </div>
   );
 

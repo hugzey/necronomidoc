@@ -50,6 +50,7 @@ export const HELP_NAV: { title: string; pages: { id: string; label: string }[] }
     title: "Features",
     pages: [
       { id: "enrichment", label: "Enrichment" },
+      { id: "subsystems", label: "Subsystems" },
       { id: "core-docs", label: "Core docs" },
       { id: "skills", label: "Skills" },
       { id: "artefacts", label: "Artefacts" },
