@@ -22,6 +22,14 @@ export const paths = {
   subsystems: (repoDir: string) => join(repoDir, "subsystems.json"),
   coreDocs: (repoDir: string) => join(repoDir, "coredocs.json"),
   enrichmentReport: (repoDir: string) => join(repoDir, "enrichment-report.json"),
+  sources: (repoDir: string) => join(repoDir, "sources.json"),
+  sourcesDir: (repoDir: string) => join(repoDir, "sources"),
+  versions: (repoDir: string) => join(repoDir, "versions.json"),
+  /** Root of the per-version content archive (decision 0021). */
+  versionArchiveRoot: (repoDir: string) => join(repoDir, "versions"),
+  /** One archived version's retained manifests + source snapshots. */
+  versionArchiveDir: (repoDir: string, version: number) =>
+    join(repoDir, "versions", String(version)),
 };
 
 function countSymbols(model: DocModel): number {

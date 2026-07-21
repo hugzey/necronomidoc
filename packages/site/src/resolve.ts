@@ -5,9 +5,30 @@ import type { DocFile, DocModel, DocSymbolShape } from "./api.js";
  * URLs so documentation text can hyperlink to the thing it mentions.
  */
 
-/** Href to a file page, optionally anchored at a symbol. */
-export function fileHref(slug: string, path: string, anchor?: string): string {
-  return `/r/${slug}/f/${path}${anchor ? `#${anchor}` : ""}`;
+/** Href to a file page, optionally anchored at a symbol. `version` keeps a
+ *  historical preview (`?docv=N`) sticky across navigation. */
+export function fileHref(slug: string, path: string, anchor?: string, version?: number): string {
+  const query = version ? `?docv=${version}` : "";
+  return `/r/${slug}/f/${path}${query}${anchor ? `#${anchor}` : ""}`;
+}
+
+/**
+ * Href to a file page with the source panel open, optionally focused on a
+ * line (1-based) and anchored at a symbol's doc card. `source=1` is the
+ * open-panel flag FileView reads from the query string; `version` keeps the
+ * historical preview sticky.
+ */
+export function sourceHref(
+  slug: string,
+  path: string,
+  line?: number,
+  anchor?: string,
+  version?: number,
+): string {
+  const params = new URLSearchParams({ source: "1" });
+  if (line) params.set("line", String(line));
+  if (version) params.set("docv", String(version));
+  return `/r/${slug}/f/${path}?${params.toString()}${anchor ? `#${anchor}` : ""}`;
 }
 
 /**
@@ -21,36 +42,50 @@ export function anchorForSymbol(kind: string | undefined, name: string): string 
   return name;
 }
 
+/** Where a symbol's documentation card and declaration live. */
+export interface SymbolTarget {
+  path: string;
+  anchor: string;
+  /** 1-based declaration line, for the source viewer. */
+  line: number;
+}
+
 export interface SymbolIndex {
   /** Best repo-wide target per symbol name (exported symbols win). */
-  byName: Map<string, { path: string; anchor: string }>;
-  /** Per-file: symbol name -> anchor, including non-exported symbols. */
-  perFile: Map<string, Map<string, string>>;
+  byName: Map<string, SymbolTarget>;
+  /** Per-file: symbol name -> target, including non-exported symbols. */
+  perFile: Map<string, Map<string, SymbolTarget>>;
 }
 
 export function buildSymbolIndex(model: DocModel): SymbolIndex {
-  const byName = new Map<string, { path: string; anchor: string; exported: boolean }>();
-  const perFile = new Map<string, Map<string, string>>();
+  const byName = new Map<string, SymbolTarget & { exported: boolean }>();
+  const perFile = new Map<string, Map<string, SymbolTarget>>();
 
   for (const file of model.files) {
-    const anchors = new Map<string, string>();
+    const targets = new Map<string, SymbolTarget>();
     const walk = (symbols: DocSymbolShape[]): void => {
       for (const s of symbols) {
-        const anchor = anchorForSymbol(s.kind, s.name);
-        anchors.set(s.name, anchor);
+        const target: SymbolTarget = {
+          path: file.path,
+          anchor: anchorForSymbol(s.kind, s.name),
+          line: s.location.line,
+        };
+        targets.set(s.name, target);
         const existing = byName.get(s.name);
         if (!existing || (s.exported && !existing.exported)) {
-          byName.set(s.name, { path: file.path, anchor, exported: s.exported });
+          byName.set(s.name, { ...target, exported: s.exported });
         }
         if (s.members) walk(s.members);
       }
     };
     walk(file.symbols);
-    perFile.set(file.path, anchors);
+    perFile.set(file.path, targets);
   }
 
   return {
-    byName: new Map([...byName].map(([k, v]) => [k, { path: v.path, anchor: v.anchor }])),
+    byName: new Map(
+      [...byName].map(([k, v]) => [k, { path: v.path, anchor: v.anchor, line: v.line }]),
+    ),
     perFile,
   };
 }
@@ -66,12 +101,28 @@ export function makeResolver(
   slug: string,
   index: SymbolIndex,
   currentPath?: string,
+  /** Keep cross-reference links inside a historical preview (`?docv=N`). */
+  version?: number,
 ): SymbolResolver {
+  const targets = makeTargetResolver(index, currentPath);
+  return (name) => {
+    const target = targets(name);
+    return target ? fileHref(slug, target.path, target.anchor, version) : undefined;
+  };
+}
+
+/** A target resolver returns where a bare symbol name is declared/documented. */
+export type TargetResolver = (name: string) => SymbolTarget | undefined;
+
+/**
+ * Like {@link makeResolver} but returning the full target (path + anchor +
+ * declaration line) — the source viewer links identifiers to the declaring
+ * file with its code panel focused on that line.
+ */
+export function makeTargetResolver(index: SymbolIndex, currentPath?: string): TargetResolver {
   return (name) => {
     const local = currentPath ? index.perFile.get(currentPath)?.get(name) : undefined;
-    if (local !== undefined) return fileHref(slug, currentPath!, local);
-    const target = index.byName.get(name);
-    return target ? fileHref(slug, target.path, target.anchor) : undefined;
+    return local ?? index.byName.get(name);
   };
 }
 

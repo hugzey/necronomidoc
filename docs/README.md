@@ -28,6 +28,8 @@ automatic rebuilds, and every operational feature.
 |---|---|
 | [Enrichment](enrichment.md) | LLM purpose summaries for undocumented code, staleness workflow, subsystem maps, provider selection (or no API key at all) |
 | [Core docs](core-docs.md) | The four per-repo documents — overview, conventions, packages, architecture — and their source precedence |
+| [Source viewer](source-viewer.md) | View a file's actual source next to its docs — split view, syntax highlighting, symbols that navigate to their declaration |
+| [Versions & metadata](doc-versions.md) | The per-repo documentation version journal and the (i) info drawer showing generation metadata |
 | [Skills](skills.md) | Generate portable Agent Skills (`SKILL.md` folders) from documented repos |
 | [Artefacts](artefacts.md) | Fill your own `.md`/`.docx` templates from repo knowledge |
 | [Documentation standard](doc-standard.md) | What to write in your repos so docs serve humans and agents alike, plus the `init-docs` scaffolder |

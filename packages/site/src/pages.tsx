@@ -1,5 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, Outlet, useLocation, useMatch, useParams } from "react-router-dom";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  Link,
+  Outlet,
+  useLocation,
+  useMatch,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   fetchArtefacts,
   fetchCoreDocs,
@@ -7,6 +24,7 @@ import {
   fetchRegistry,
   fetchSkillSet,
   fetchSkillSets,
+  fetchSources,
   fetchStatus,
   fetchSubsystems,
   flattenSymbols,
@@ -21,6 +39,7 @@ import {
   type SkillSet,
   type SkillSetIndex,
   type SkillsGenerateResult,
+  type SourcesManifest,
   type StatusResponse,
   type Subsystem,
   type SubsystemsManifest,
@@ -29,52 +48,39 @@ import {
   CodeText,
   DocText,
   KindBadge,
+  Loading,
   ProvenanceBadge,
   ScopeBadge,
   ScrollToAnchor,
   Sidebar,
+  useAsync,
 } from "./components.js";
 import { MarkdownDoc } from "./markdown.js";
+import { HistoricalBanner, RepoInfoDrawer } from "./meta.js";
 import { ApiReference } from "./openapi.js";
 import {
   anchorForSymbol,
   buildSymbolIndex,
   fileHref,
   makeResolver,
+  makeTargetResolver,
   resolveImport,
+  sourceHref,
   type SymbolResolver,
 } from "./resolve.js";
 import { buildSiteIndex } from "./search.js";
-
-function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data?: T; error?: string; loading: boolean } {
-  const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
-  useEffect(() => {
-    let live = true;
-    // Keep the previous data while refetching so polled views (StatusView)
-    // update in place instead of flashing back to a spinner.
-    setState((s) => ({ ...s, loading: true }));
-    fn()
-      .then((data) => live && setState({ data, loading: false }))
-      .catch(
-        (err: unknown) => live && setState((s) => ({ data: s.data, error: String(err), loading: false })),
-      );
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-  return state;
-}
-
-function Loading() {
-  return (
-    <div className="flex justify-center p-10">
-      <span className="loading loading-spinner loading-md" aria-label="Loading" />
-    </div>
-  );
-}
+import { SourcePanel, SplitSourceView } from "./source.js";
 
 // ---- Layout: drawer with sidebar (persistent on lg, overlay below) ----
+
+/**
+ * The active page reports whether it needs the full-viewport width (the file
+ * page in split-source mode). Driving it from real child state — not by
+ * sniffing the URL — keeps Layout correct when the panel is suppressed
+ * (no snapshot, prose file, still loading).
+ */
+const WideLayoutContext = createContext<(wide: boolean) => void>(() => {});
+export const useWideLayout = (): ((wide: boolean) => void) => useContext(WideLayoutContext);
 
 export function Layout() {
   const match = useMatch("/r/:slug/*");
@@ -88,6 +94,7 @@ export function Layout() {
   );
   const drawerRef = useRef<HTMLInputElement>(null);
   const location = useLocation();
+  const [wide, setWide] = useState(false);
   useEffect(() => {
     if (drawerRef.current) drawerRef.current.checked = false;
   }, [location]);
@@ -106,9 +113,12 @@ export function Layout() {
             necronomidoc
           </Link>
         </header>
-        <main className="mx-auto w-full max-w-4xl px-5 py-8">
+        <main className={`relative mx-auto w-full ${wide ? "max-w-none" : "max-w-4xl"} px-5 py-8`}>
           <ScrollToAnchor />
-          <Outlet />
+          {slug && <RepoInfoDrawer slug={slug} />}
+          <WideLayoutContext.Provider value={setWide}>
+            <Outlet />
+          </WideLayoutContext.Provider>
         </main>
       </div>
       <div className="drawer-side">
@@ -744,13 +754,18 @@ export function ArtefactsView() {
 
 export function RepoView() {
   const { slug = "" } = useParams();
-  const { data: model, error, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const [searchParams] = useSearchParams();
+  const version = Number(searchParams.get("docv") ?? "") || undefined;
+  const { data: model, error, loading } = useAsync<DocModel>(
+    () => fetchModel(slug, version),
+    [slug, version],
+  );
   const [query, setQuery] = useState("");
   const searchIndex = useMemo(() => (model ? buildSiteIndex(model) : undefined), [model]);
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
-    () => (symbolIndex ? makeResolver(slug, symbolIndex) : undefined),
-    [slug, symbolIndex],
+    () => (symbolIndex ? makeResolver(slug, symbolIndex, undefined, version) : undefined),
+    [slug, symbolIndex, version],
   );
   const results = useMemo(
     () => (searchIndex && query ? searchIndex.search(query).slice(0, 25) : []),
@@ -763,6 +778,9 @@ export function RepoView() {
 
   return (
     <div>
+      {version && (
+        <HistoricalBanner slug={slug} version={version} currentHref={`/r/${slug}`} />
+      )}
       <h1 className="mb-4 text-2xl font-bold">{model.repo.name}</h1>
       <label className="input w-full">
         <svg className="h-4 w-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -785,6 +803,7 @@ export function RepoView() {
                   slug,
                   r.path,
                   r.type === "symbol" ? anchorForSymbol(r.kind, r.name) : undefined,
+                  version,
                 )}
               >
                 <KindBadge kind={String(r.kind ?? r.type)} />
@@ -816,7 +835,7 @@ export function RepoView() {
               {model.files.map((f) => (
                 <tr key={f.id}>
                   <td className="whitespace-nowrap align-top">
-                    <Link to={fileHref(slug, f.path)} className="link-hover link font-mono text-sm">
+                    <Link to={fileHref(slug, f.path, undefined, version)} className="link-hover link font-mono text-sm">
                       {f.path}
                     </Link>
                   </td>
@@ -1058,9 +1077,12 @@ export function SubsystemsView() {
 function SymbolCard({
   symbol,
   resolve,
+  sourceLink,
 }: {
   symbol: DocSymbolShape;
   resolve: SymbolResolver;
+  /** Href opening the source panel at this symbol's declaration line. */
+  sourceLink?: string;
 }) {
   return (
     <div className="card card-border mb-4 bg-base-100 scroll-mt-4" id={symbol.name}>
@@ -1074,6 +1096,15 @@ function SymbolCard({
             <span className="badge badge-sm badge-success badge-outline">export</span>
           ) : (
             <span className="badge badge-sm badge-ghost">internal</span>
+          )}
+          {sourceLink && (
+            <Link
+              to={sourceLink}
+              className="btn btn-ghost btn-xs font-mono text-base-content/60"
+              title={`View source (line ${symbol.location.line})`}
+            >
+              {"</>"}
+            </Link>
           )}
         </div>
         {symbol.signature && (
@@ -1165,19 +1196,123 @@ function SymbolCard({
   );
 }
 
+/**
+ * The file's symbol cards. Memoized so navigating the source panel (which
+ * only changes `?line=`) doesn't re-render every card and its DocText.
+ */
+const SymbolList = memo(function SymbolList({
+  symbols,
+  resolve,
+  slug,
+  filePath,
+  hasSnapshot,
+  version,
+}: {
+  symbols: DocSymbolShape[];
+  resolve: SymbolResolver;
+  slug: string;
+  filePath: string;
+  hasSnapshot: boolean;
+  version?: number;
+}) {
+  return (
+    <>
+      {symbols.map((s) => (
+        <SymbolCard
+          key={s.id}
+          symbol={s}
+          resolve={resolve}
+          sourceLink={
+            hasSnapshot ? sourceHref(slug, filePath, s.location.line, s.name, version) : undefined
+          }
+        />
+      ))}
+    </>
+  );
+});
+
 export function FileView() {
   const { slug = "", "*": filePath = "" } = useParams();
-  const { data: model, loading } = useAsync<DocModel>(() => fetchModel(slug), [slug]);
+  const [searchParams] = useSearchParams();
+  // A historical preview (`?docv=N`) loads that version's archived model +
+  // source snapshots instead of the live ones (decision 0021).
+  const version = Number(searchParams.get("docv") ?? "") || undefined;
+  const { data: model, loading } = useAsync<DocModel>(
+    () => fetchModel(slug, version),
+    [slug, version],
+  );
+  const { data: sources } = useAsync<SourcesManifest | undefined>(
+    () => fetchSources(slug, version),
+    [slug, version],
+  );
+  const navigate = useNavigate();
+  const location = useLocation();
   const symbolIndex = useMemo(() => (model ? buildSymbolIndex(model) : undefined), [model]);
   const resolve = useMemo(
-    () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath) : undefined),
-    [slug, symbolIndex, filePath],
+    () => (symbolIndex ? makeResolver(slug, symbolIndex, filePath, version) : undefined),
+    [slug, symbolIndex, filePath, version],
+  );
+  const targets = useMemo(
+    () => (symbolIndex ? makeTargetResolver(symbolIndex, filePath) : undefined),
+    [symbolIndex, filePath],
   );
 
-  if (loading) return <Loading />;
+  // O(1) snapshot lookups instead of scanning sources.files each render.
+  const snapshotPaths = useMemo(
+    () => new Set(sources?.files.map((s) => s.path)),
+    [sources],
+  );
+
   const file = model?.files.find((f) => f.path === filePath);
-  if (!file || !resolve) return <div className="alert alert-error">File not found: {filePath}</div>;
-  const symbols = flattenSymbols(file);
+  // Stable ref so the memoized symbol list doesn't re-render on line focus.
+  const symbols = useMemo(() => (file ? flattenSymbols(file) : []), [file]);
+  // Source viewer state lives in the URL so cross-file symbol links can open
+  // the panel focused on a declaration line (decision 0020).
+  const hasSnapshot = file?.format === "source" && snapshotPaths.has(filePath);
+  const sourceOpen = hasSnapshot && searchParams.get("source") === "1";
+
+  // Drive the layout width from the real panel state, not the URL, so a
+  // `?source=1` link to a file with no snapshot never widens to an empty page.
+  const setWide = useWideLayout();
+  useEffect(() => {
+    setWide(sourceOpen);
+    return () => setWide(false);
+  }, [setWide, sourceOpen]);
+
+  if (loading) return <Loading />;
+  if (!file || !resolve) {
+    // In a historical preview the file may simply not exist in that version
+    // (added later) — point back to the current docs rather than blame a build.
+    if (version) {
+      return (
+        <div>
+          <HistoricalBanner slug={slug} version={version} currentHref={fileHref(slug, filePath)} />
+          <div className="alert alert-warning">
+            <span>
+              <code>{filePath}</code> isn't part of <strong>v{version}</strong>.
+            </span>
+          </div>
+        </div>
+      );
+    }
+    return <div className="alert alert-error">File not found: {filePath}</div>;
+  }
+
+  const focusLine = Number(searchParams.get("line") ?? "") || undefined;
+  // Toggle the panel while keeping the current hash: setSearchParams drops it,
+  // which would fire ScrollToAnchor and bounce the page to the top.
+  const setSource = (open: boolean): void => {
+    const p = new URLSearchParams(searchParams);
+    if (open) p.set("source", "1");
+    else {
+      p.delete("source");
+      p.delete("line");
+    }
+    const search = p.toString();
+    navigate({ search: search ? `?${search}` : "", hash: location.hash }, { replace: true });
+  };
+  const openSource = (): void => setSource(true);
+  const closeSource = (): void => setSource(false);
 
   const breadcrumbs = (
     <div className="breadcrumbs text-sm">
@@ -1214,10 +1349,20 @@ export function FileView() {
     );
   }
 
-  return (
+  const doc = (
     <div>
       {breadcrumbs}
-      <h1 className="mb-3 font-mono text-xl font-bold">{file.path}</h1>
+      {version && (
+        <HistoricalBanner slug={slug} version={version} currentHref={fileHref(slug, filePath)} />
+      )}
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h1 className="font-mono text-xl font-bold">{file.path}</h1>
+        {hasSnapshot && !sourceOpen && (
+          <button type="button" className="btn btn-outline btn-xs" onClick={openSource}>
+            View source
+          </button>
+        )}
+      </div>
       {file.enrichment?.summary && (
         <p className="mb-1">
           <DocText text={file.enrichment.summary} resolve={resolve} />{" "}
@@ -1252,8 +1397,12 @@ export function FileView() {
                         {" — "}
                         {imp.names.map((n, j) => {
                           const bare = n.replace(/^\* as /, "");
-                          const anchor = target ? symbolIndex?.perFile.get(target)?.get(bare) : undefined;
-                          const href = anchor !== undefined ? fileHref(slug, target!, anchor) : resolve(bare);
+                          const imported = target
+                            ? symbolIndex?.perFile.get(target)?.get(bare)
+                            : undefined;
+                          const href = imported
+                            ? fileHref(slug, target!, imported.anchor, version)
+                            : resolve(bare);
                           return (
                             <span key={j}>
                               {j > 0 && ", "}
@@ -1278,9 +1427,32 @@ export function FileView() {
       )}
 
       <h2 className="mb-3 mt-6 text-lg font-semibold">Symbols ({symbols.length})</h2>
-      {symbols.map((s) => (
-        <SymbolCard key={s.id} symbol={s} resolve={resolve} />
-      ))}
+      <SymbolList
+        symbols={symbols}
+        resolve={resolve}
+        slug={slug}
+        filePath={filePath}
+        hasSnapshot={hasSnapshot}
+        version={version}
+      />
     </div>
+  );
+
+  if (!sourceOpen || !targets) return doc;
+
+  return (
+    <SplitSourceView
+      doc={doc}
+      panel={
+        <SourcePanel
+          slug={slug}
+          path={filePath}
+          focusLine={focusLine}
+          targets={targets}
+          version={version}
+          onClose={closeSource}
+        />
+      }
+    />
   );
 }

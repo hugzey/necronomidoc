@@ -51,6 +51,8 @@ export const HELP_NAV: { title: string; pages: { id: string; label: string }[] }
     pages: [
       { id: "enrichment", label: "Enrichment" },
       { id: "core-docs", label: "Core docs" },
+      { id: "source-viewer", label: "Source viewer" },
+      { id: "doc-versions", label: "Versions & metadata" },
       { id: "skills", label: "Skills" },
       { id: "artefacts", label: "Artefacts" },
       { id: "doc-standard", label: "Doc standard" },
