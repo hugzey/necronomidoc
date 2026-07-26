@@ -178,6 +178,8 @@ export interface AppliedResults {
   overlays: EnrichmentOverlay[];
   coreDocs: LlmCoreDoc[];
   subsystems?: Subsystem[];
+  /** Repo-level narrative from the subsystem-proposal task, when present. */
+  subsystemsOverview?: string;
   /** Results that matched a task and parsed cleanly. */
   applied: number;
   failures: { id: string; error: string }[];
@@ -236,7 +238,9 @@ export function applyEnrichmentResults(
           }),
         );
       } else {
-        applied.subsystems = subsystemsFromResponse(text);
+        const source = subsystemsFromResponse(text);
+        applied.subsystems = source.subsystems;
+        applied.subsystemsOverview = source.overview;
       }
       applied.applied++;
     } catch (err) {

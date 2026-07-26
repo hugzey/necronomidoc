@@ -94,7 +94,7 @@ export function buildCorpusDocs(
         ...sub.notOwns,
         ...sub.entryPoints,
         ...sub.dirs,
-        ...sub.related.map((r) => `${r.name} ${r.relation}`),
+        ...sub.related.map((r) => `${r.name ?? r.to ?? ""} ${r.relation}`),
       ]
         .filter(Boolean)
         .join(" "),

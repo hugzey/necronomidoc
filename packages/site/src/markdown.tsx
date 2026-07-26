@@ -41,7 +41,7 @@ function loadMermaid(): Promise<typeof import("mermaid")["default"]> {
  * architecture diagrams — slice 7). On a render error the raw source is shown
  * instead so a bad diagram never blanks the page.
  */
-function MermaidBlock({ code }: { code: string }) {
+export function MermaidBlock({ code }: { code: string }) {
   const [svg, setSvg] = useState<string>();
   const [error, setError] = useState<string>();
   const reactId = useId();

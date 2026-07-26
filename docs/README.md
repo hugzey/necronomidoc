@@ -27,6 +27,7 @@ automatic rebuilds, and every operational feature.
 | Document | What it covers |
 |---|---|
 | [Enrichment](enrichment.md) | LLM purpose summaries for undocumented code, staleness workflow, subsystem maps, provider selection (or no API key at all) |
+| [Subsystems](subsystems.md) | Logical subsystem maps — purpose, in/out-of-scope boundaries, two-way links, architecture diagram; curated, LLM-proposed, or import-graph inferred |
 | [Core docs](core-docs.md) | The four per-repo documents — overview, conventions, packages, architecture — and their source precedence |
 | [Source viewer](source-viewer.md) | View a file's actual source next to its docs — split view, syntax highlighting, symbols that navigate to their declaration |
 | [Versions & metadata](doc-versions.md) | The per-repo documentation version journal and the (i) info drawer showing generation metadata |
