@@ -8,13 +8,16 @@ import type {
   DocFile,
   DocModel,
   DocSymbolShape,
+  DocVersionEntry,
   GenerationScope,
   IngestStatusResponse,
   Registry,
   SkillSet,
   SkillSetIndex,
+  SourcesManifest,
   Subsystem,
   SubsystemsManifest,
+  VersionsManifest,
 } from "@necronomidoc/docmodel";
 
 export type {
@@ -27,12 +30,15 @@ export type {
   DocFile,
   DocModel,
   DocSymbolShape,
+  DocVersionEntry,
   GenerationScope,
   Registry,
   SkillSet,
   SkillSetIndex,
+  SourcesManifest,
   Subsystem,
   SubsystemsManifest,
+  VersionsManifest,
 };
 
 /**
@@ -64,13 +70,27 @@ export function fetchRegistry(): Promise<Registry> {
   return getJson<Registry>("/data/registry.json");
 }
 
-export function fetchModel(slug: string): Promise<DocModel> {
+/**
+ * Base path for a repo's manifests. With a `version`, points at that version's
+ * retained archive (`repos/<slug>/versions/<n>/`) for historical preview;
+ * otherwise the live published state.
+ */
+function repoBase(slug: string, version?: number): string {
+  return version ? `/data/repos/${slug}/versions/${version}` : `/data/repos/${slug}`;
+}
+
+/**
+ * The repo's doc model. With `version`, loads that version's archived model —
+ * historical preview isn't available in static-export mode, so the current
+ * injected model is returned instead.
+ */
+export function fetchModel(slug: string, version?: number): Promise<DocModel> {
   const injected = injectedData();
   if (injected) {
     const model = injected.models[slug];
     return model ? Promise.resolve(model) : Promise.reject(new Error(`no model for ${slug}`));
   }
-  return getJson<DocModel>(`/data/repos/${slug}/docmodel.json`);
+  return getJson<DocModel>(`${repoBase(slug, version)}/docmodel.json`);
 }
 
 /**
@@ -95,6 +115,77 @@ export async function fetchCoreDocs(slug: string): Promise<CoreDocsManifest | un
   const res = await fetch(`/data/repos/${slug}/coredocs.json`);
   if (!res.ok) return undefined;
   return (await res.json()) as CoreDocsManifest;
+}
+
+/**
+ * The repo's source-snapshot index (decision 0020). Unavailable in
+ * static-export mode and for repos built before the source viewer shipped —
+ * both return undefined so the "View source" button simply doesn't render.
+ */
+export async function fetchSources(
+  slug: string,
+  version?: number,
+): Promise<SourcesManifest | undefined> {
+  if (injectedData()) return undefined;
+  return getOptionalJson<SourcesManifest>(`${repoBase(slug, version)}/sources.json`);
+}
+
+/**
+ * The repo's documentation version journal (decision 0021). Same graceful
+ * degradation as the other optional manifests.
+ */
+export async function fetchVersions(slug: string): Promise<VersionsManifest | undefined> {
+  if (injectedData()) return undefined;
+  return getOptionalJson<VersionsManifest>(`/data/repos/${slug}/versions.json`);
+}
+
+/**
+ * `getJson`, but a manifest that legitimately doesn't exist (404 — repo built
+ * before the feature, or a path the server doesn't publish) degrades to
+ * undefined. Real failures (5xx, network) still throw so callers can tell
+ * "not published" apart from "couldn't load".
+ */
+async function getOptionalJson<T>(url: string): Promise<T | undefined> {
+  if (cache.has(url)) return cache.get(url) as T;
+  const res = await fetch(url);
+  if (res.status === 404) return undefined;
+  if (!res.ok) throw new Error(`${res.status} fetching ${url}`);
+  const data = (await res.json()) as T;
+  cache.set(url, data);
+  return data;
+}
+
+/**
+ * Source texts are up to 512 KiB each, so unlike the small JSON manifests
+ * they get a bounded cache: browsing a large repo must not pin every visited
+ * file's text in memory for the life of the tab.
+ */
+const sourceTextCache = new Map<string, string>();
+const SOURCE_TEXT_CACHE_MAX = 20;
+
+/**
+ * One snapshotted source file's text, for the source viewer. Undefined when
+ * the snapshot is missing (pre-viewer build, size-capped file, static export).
+ */
+export async function fetchSourceText(
+  slug: string,
+  path: string,
+  version?: number,
+): Promise<string | undefined> {
+  if (injectedData()) return undefined;
+  const rel = path.split("/").map(encodeURIComponent).join("/");
+  const url = `${repoBase(slug, version)}/sources/${rel}`;
+  const cached = sourceTextCache.get(url);
+  if (cached !== undefined) return cached;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const text = await res.text();
+  if (sourceTextCache.size >= SOURCE_TEXT_CACHE_MAX) {
+    // Maps iterate in insertion order — drop the oldest entry.
+    sourceTextCache.delete(sourceTextCache.keys().next().value!);
+  }
+  sourceTextCache.set(url, text);
+  return text;
 }
 
 // ---- Ingestion status (slice 2) ----

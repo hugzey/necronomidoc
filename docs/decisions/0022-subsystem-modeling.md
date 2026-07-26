@@ -1,4 +1,4 @@
-# 0020 — Subsystem modeling: import-graph clustering, two-way links, generated architecture diagram
+# 0022 — Subsystem modeling: import-graph clustering, two-way links, generated architecture diagram
 
 **Status:** Accepted
 

@@ -4,6 +4,47 @@ import type { DocFile, DocModel, Registry } from "./api.js";
 import { HELP_NAV, helpHref, helpIdFromPath, isActiveNavEntry } from "./help-nav.js";
 import { fileHref, type SymbolResolver } from "./resolve.js";
 
+// ---- Shared async-fetch hook + loading spinner ----
+
+/**
+ * Fetch-into-state with a stale-response guard: only the latest invocation
+ * may set state, and errors are captured rather than left as unhandled
+ * rejections. The single async pattern for every data-loading view.
+ */
+export function useAsync<T>(
+  fn: () => Promise<T>,
+  deps: unknown[],
+): { data?: T; error?: string; loading: boolean } {
+  const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({
+    loading: true,
+  });
+  useEffect(() => {
+    let live = true;
+    // Keep the previous data while refetching so polled views (StatusView)
+    // update in place instead of flashing back to a spinner.
+    setState((s) => ({ ...s, loading: true }));
+    fn()
+      .then((data) => live && setState({ data, loading: false }))
+      .catch(
+        (err: unknown) =>
+          live && setState((s) => ({ data: s.data, error: String(err), loading: false })),
+      );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return state;
+}
+
+export function Loading() {
+  return (
+    <div className="flex justify-center p-10">
+      <span className="loading loading-spinner loading-md" aria-label="Loading" />
+    </div>
+  );
+}
+
 // ---- Badges (daisyUI badge variants per symbol kind / provenance) ----
 
 const KIND_BADGE: Record<string, string> = {
