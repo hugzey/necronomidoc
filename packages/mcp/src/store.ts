@@ -3,6 +3,7 @@ import type MiniSearch from "minisearch";
 import {
   CoreDocsManifest,
   DocModel,
+  ProductManifest,
   SubsystemsManifest,
   fileIdOfSymbol,
   type DocFile,
@@ -19,6 +20,7 @@ interface LoadedRepo {
   index: MiniSearch<SearchDoc>;
   subsystems?: SubsystemsManifest;
   coreDocs?: CoreDocsManifest;
+  product?: ProductManifest;
   /** file id -> file, symbol id -> symbol, for O(1) lookups. */
   filesById: Map<string, DocFile>;
   filesByPath: Map<string, DocFile>;
@@ -73,6 +75,12 @@ export class ManifestStore {
           );
           if (parsed.success) coreDocs = parsed.data;
         }
+        const productPath = paths.product(repoDir);
+        let product: ProductManifest | undefined;
+        if (existsSync(productPath)) {
+          const parsed = ProductManifest.safeParse(JSON.parse(readFileSync(productPath, "utf8")));
+          if (parsed.success) product = parsed.data;
+        }
         const filesById = new Map<string, DocFile>();
         const filesByPath = new Map<string, DocFile>();
         const symbolsById = new Map<string, DocSymbolShape>();
@@ -93,6 +101,7 @@ export class ManifestStore {
           index,
           subsystems,
           coreDocs,
+          product,
           filesById,
           filesByPath,
           symbolsById,
@@ -173,6 +182,11 @@ export class ManifestStore {
   /** The repo's curated/heuristic subsystem map, if it was published. */
   getSubsystems(slug: string): SubsystemsManifest | undefined {
     return this.repos.get(slug)?.subsystems;
+  }
+
+  /** The repo's product docs manifest (decision 0023), if it was published. */
+  getProduct(slug: string): ProductManifest | undefined {
+    return this.repos.get(slug)?.product;
   }
 
   /** The repo's resolved core docs manifest, if it was published. */

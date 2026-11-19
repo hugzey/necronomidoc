@@ -559,7 +559,7 @@ export type Registry = z.infer<typeof Registry>;
 /** One row in the serialized search corpus. */
 export const SearchDoc = z.object({
   id: z.string(),
-  type: z.enum(["file", "symbol", "subsystem", "coredoc"]),
+  type: z.enum(["file", "symbol", "subsystem", "coredoc", "product"]),
   repo: z.string(),
   path: z.string(),
   name: z.string(),

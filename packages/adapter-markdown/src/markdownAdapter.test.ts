@@ -53,3 +53,15 @@ describe("extractMarkdownFile", () => {
     expect(bare.moduleDoc?.summary).toBe("just some text");
   });
 });
+
+describe("extractMarkdownFile with YAML frontmatter", () => {
+  it("ignores frontmatter for headings/summary and falls back to its title", () => {
+    const raw = "---\nid: SES-001\ntitle: \"Buy a thing\"  # comment\n# not a heading\n---\n\nThe session narrative.\n\n## Steps\n\nFirst step.\n";
+    const file = extractMarkdownFile("repo", "docs/product/sessions/SES-001.md", raw);
+    expect(file.title).toBe("Buy a thing");
+    expect(file.moduleDoc?.summary).toBe("The session narrative.");
+    expect(file.symbols.map((s) => [s.name, s.location.line])).toEqual([["Steps", 9]]);
+    // The raw content (frontmatter included) is kept for the product parser.
+    expect(file.content).toBe(raw);
+  });
+});

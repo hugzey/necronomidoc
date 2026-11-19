@@ -10,6 +10,7 @@ export * from "./llm.js";
 export * from "./skills.js";
 export * from "./artefacts.js";
 export * from "./docstandard.js";
+export * from "./product.js";
 export * from "./auth.js";
 export * from "./backup.js";
 export * from "./datadir.js";

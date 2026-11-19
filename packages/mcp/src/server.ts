@@ -9,7 +9,7 @@ function jsonContent(result: ToolResult) {
 }
 
 /**
- * Build a fresh MCP server exposing the seven documentation tools over the
+ * Build a fresh MCP server exposing the ten documentation tools over the
  * given manifest store (decision 0008). All tools are read-only and answer
  * from the in-memory store — no side effects, safe to instantiate per request.
  */
@@ -33,7 +33,7 @@ export function createMcpServer(store: ManifestStore): McpServer {
     "search_docs",
     {
       description:
-        "Search files, symbols, and subsystems across repos by concept keywords. Call this whenever you need to know if something already exists (a helper, hook, component, or a whole subsystem) before writing new code. Returns ranked hits with ids for follow-up get_file_doc / get_function_doc calls. Cursor-paginated.",
+        "Search files, symbols, subsystems, core docs and product docs (personas, intents, sessions, stories) across repos by concept keywords. Call this whenever you need to know if something already exists (a helper, hook, component, or a whole subsystem) before writing new code. Returns ranked hits with ids for follow-up get_file_doc / get_function_doc calls. Cursor-paginated.",
       inputSchema: {
         query: z.string().describe("Search terms (concepts, names, purposes — e.g. 'currency formatting')."),
         repo: z.string().optional().describe("Restrict to one repo slug."),
@@ -96,6 +96,45 @@ export function createMcpServer(store: ManifestStore): McpServer {
       },
     },
     async (args) => jsonContent(tools.get_subsystem_overview(store, args)),
+  );
+
+  server.registerTool(
+    "get_product_overview",
+    {
+      description:
+        "Get a repo's product documentation: personas, jobs-to-be-done (the INTENTS users arrive with), intent interaction sessions (one intent followed end to end through the product), journeys, epics and user stories — plus test coverage of acceptance criteria/outcomes, drift findings, and interaction surfaces no session covers. Call this to understand what the product is FOR before changing user-facing behaviour.",
+      inputSchema: {
+        repo: z.string().describe("Repo slug."),
+      },
+    },
+    async (args) => jsonContent(tools.get_product_overview(store, args)),
+  );
+
+  server.registerTool(
+    "get_product_doc",
+    {
+      description:
+        "Get one product document by id (PER-…, JOB-…, EPIC-…, STORY-…, JRN-…, SES-…): all structured fields, Gherkin acceptance criteria and EARS requirements, session steps with their code bindings (state ok/changed/broken), outcomes, tests citing it, and inbound links. Use it to see exactly how a user intent must play out.",
+      inputSchema: {
+        repo: z.string().describe("Repo slug."),
+        id: z.string().describe("Product doc id, e.g. 'SES-001' or 'STORY-012'."),
+      },
+    },
+    async (args) => jsonContent(tools.get_product_doc(store, args)),
+  );
+
+  server.registerTool(
+    "find_intents_for_code",
+    {
+      description:
+        "Before changing a file or symbol, ask which user intents run through it: returns the interaction sessions (with the steps that touch it and the outcomes to preserve) and stories (with acceptance criteria to keep true) whose code bindings point at it. Prevents behaviour drift.",
+      inputSchema: {
+        repo: z.string().describe("Repo slug."),
+        path: z.string().describe("File path relative to the repo root (or a directory)."),
+        symbol: z.string().optional().describe("Symbol name within the file, to narrow the match."),
+      },
+    },
+    async (args) => jsonContent(tools.find_intents_for_code(store, args)),
   );
 
   server.registerTool(

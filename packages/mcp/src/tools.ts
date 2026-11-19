@@ -1,4 +1,11 @@
-import type { DocFile, DocSymbolShape } from "@necronomidoc/docmodel";
+import {
+  normalizeProductRef,
+  type CodeBinding,
+  type DocFile,
+  type DocSymbolShape,
+  type ProductDoc,
+} from "@necronomidoc/docmodel";
+import { productSummary } from "./search.js";
 import type { ManifestStore } from "./store.js";
 
 /** Offset-based opaque cursor. */
@@ -69,6 +76,31 @@ function endpointsByTag(file: DocFile): {
     endpointsTruncated: truncated > 0 ? truncated : undefined,
   };
 }
+
+/** Compact list row for a product doc. */
+function productDigest(doc: ProductDoc): ToolResult {
+  return {
+    id: doc.id,
+    type: doc.type,
+    title: doc.title,
+    status: doc.status,
+    statement: productSummary(doc),
+    provenance: doc.provenance,
+    stale: doc.stale || undefined,
+  };
+}
+
+/** Does a binding point at this file (or a symbol in it / a dir containing it)? */
+function bindingHitsPath(binding: CodeBinding, path: string, symbol?: string): boolean {
+  const t = binding.target;
+  if (!t) return false;
+  if (t.kind === "dir") return path === t.path || path.startsWith(`${t.path}/`);
+  if (t.path !== path) return false;
+  if (!symbol || t.kind === "file") return true;
+  return t.name === symbol || t.name?.startsWith(`${symbol}.`) === true;
+}
+
+const PRODUCT_BODY_MAX = 6000;
 
 export const tools = {
   list_repos(store: ManifestStore): ToolResult {
@@ -311,6 +343,101 @@ export const tools = {
             exports: f.symbols.filter((s) => s.exported).map((s) => s.name),
           })),
         })),
+    };
+  },
+
+  get_product_overview(store: ManifestStore, args: { repo: string }): ToolResult {
+    const product = store.getProduct(args.repo);
+    if (!product) return { error: `No product docs published for repo "${args.repo}" — rebuild it with a current server.` };
+    const byType = (type: ProductDoc["type"]) => product.docs.filter((d) => d.type === type).map(productDigest);
+    const errors = product.findings.filter((f) => f.level === "error");
+    return {
+      repo: args.repo,
+      source: product.source,
+      stale: product.stale,
+      overview: product.overview?.slice(0, 3000),
+      personas: byType("persona"),
+      jobs: byType("job"),
+      sessions: product.docs
+        .filter((d) => d.type === "session")
+        .map((d) => ({
+          ...productDigest(d),
+          job: d.type === "session" ? d.job : undefined,
+          outcomes: d.type === "session" ? d.outcomes.map((o) => `${o.id} ${o.kind}: ${o.title}`) : undefined,
+        })),
+      journeys: byType("journey"),
+      epics: byType("epic"),
+      stories: byType("story"),
+      coverage: product.coverage,
+      uncoveredSurfaces: product.surfaces.filter((s) => s.coveredBy.length === 0).slice(0, 40).map((s) => `${s.kind}: ${s.name} (${s.path})`),
+      findings: { errors: errors.length, warnings: product.findings.filter((f) => f.level === "warn").length, topErrors: errors.slice(0, 10).map((f) => `${f.docId ?? f.path ?? ""}: ${f.message}`) },
+      ...(product.source === "none"
+        ? { hint: "No product docs yet: write docs/product/ (necronomidoc product init / product new) or run `necronomidoc enrich --product` for drafts." }
+        : {}),
+    };
+  },
+
+  get_product_doc(store: ManifestStore, args: { repo: string; id: string }): ToolResult {
+    const product = store.getProduct(args.repo);
+    if (!product) return { error: `No product docs published for repo "${args.repo}".` };
+    const key = normalizeProductRef(args.id);
+    const doc = product.docs.find((d) => normalizeProductRef(d.id) === key);
+    if (!doc) return { error: `No product doc "${args.id}" in "${args.repo}" — call get_product_overview for the ids.` };
+    const titles = new Map(product.docs.map((d) => [d.id, d.title]));
+    const { body, diagrams, docHash, referencedBy, ...fields } = doc;
+    return {
+      repo: args.repo,
+      ...fields,
+      statement: productSummary(doc),
+      referencedBy: referencedBy.map((l) => ({ ...l, title: titles.get(l.id) })),
+      findings: product.findings.filter((f) => f.docId === doc.id).map((f) => `${f.level}: ${f.message}`),
+      flowDiagram: diagrams.flow,
+      body: body.length > PRODUCT_BODY_MAX ? `${body.slice(0, PRODUCT_BODY_MAX)}\n…(truncated)` : body,
+    };
+  },
+
+  find_intents_for_code(
+    store: ManifestStore,
+    args: { repo: string; path: string; symbol?: string },
+  ): ToolResult {
+    const product = store.getProduct(args.repo);
+    if (!product) return { error: `No product docs published for repo "${args.repo}".` };
+    const path = args.path.replace(/^\.\//, "");
+    const hits = product.docs.flatMap((doc) => {
+      const bindings = doc.bindings.filter((b) => bindingHitsPath(b, path, args.symbol));
+      if (bindings.length === 0) return [];
+      const base = { ...productDigest(doc), via: bindings.map((b) => ({ ref: b.ref, step: b.step, state: b.state })) };
+      if (doc.type === "session") {
+        const steps = new Set(bindings.map((b) => b.step).filter(Boolean));
+        return [
+          {
+            ...base,
+            intent: doc.intent,
+            job: doc.job,
+            steps: doc.steps.filter((s) => steps.has(s.id)).map((s) => ({ id: s.id, action: s.action, expects: s.expects })),
+            outcomesToPreserve: doc.outcomes.map((o) => ({ id: `${doc.id}.${o.id}`, kind: o.kind, title: o.title, criteria: o.criteria })),
+          },
+        ];
+      }
+      if (doc.type === "story") {
+        return [
+          {
+            ...base,
+            acceptanceToPreserve: doc.acceptance.map((a) => ({ id: `${doc.id}.${a.id}`, title: a.title, text: a.text })),
+            requirements: doc.requirements.map((r) => `${doc.id}.${r.id}: ${r.text}`),
+          },
+        ];
+      }
+      return [base];
+    });
+    return {
+      repo: args.repo,
+      path,
+      symbol: args.symbol,
+      intents: hits,
+      ...(hits.length === 0
+        ? { note: "No product doc binds to this code. Either it is not user-facing, or the sessions/stories that exercise it don't list it in `code:` yet." }
+        : { note: "Changing this code can affect these user intents — keep the listed outcomes and acceptance criteria true, and run the tests citing their ids." }),
     };
   },
 

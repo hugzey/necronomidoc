@@ -98,8 +98,8 @@ Default `./.necronomidoc-data` (`/data` in the container):
 ```
 repos.json            watched-source registry (curated — back up)
 registry.json         built-docs manifest (which repos are published)
-enrichment/<slug>/    human + LLM overlays, core-doc overrides (curated — back up)
-repos/<slug>/         published manifests: docmodel, search index, coredocs, llms.txt,
+enrichment/<slug>/    human + LLM overlays, core-doc + product overrides, LLM drafts (curated — back up)
+repos/<slug>/         published manifests: docmodel, search index, coredocs, product, llms.txt,
                       version journal, source snapshots (sources.json + sources/),
                       per-version content archive (versions/<n>/, last 10)
 clones/<id>/          persistent shallow clones (regenerable)

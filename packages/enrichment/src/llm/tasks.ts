@@ -5,6 +5,7 @@ import {
   type DocModel,
   type EnrichmentOverlay,
   type LlmCoreDoc,
+  type LlmProductSet,
   type Subsystem,
 } from "@necronomidoc/docmodel";
 import {
@@ -13,6 +14,7 @@ import {
   llmCoreDocFromResponse,
 } from "../coredocs.js";
 import { subsystemsFromResponse, subsystemsRequestFor } from "../subsystems.js";
+import { productFilesFromResponse, productRequestFor } from "../product/llm.js";
 import type { LlmCompleteRequest } from "./client.js";
 import {
   enrichmentRequestFor,
@@ -55,12 +57,14 @@ const TargetMeta = z.object({
 
 export const EnrichmentTask = z.object({
   id: z.string(),
-  kind: z.enum(["file-summary", "core-doc", "subsystems"]),
+  kind: z.enum(["file-summary", "core-doc", "subsystems", "product"]),
   request: TaskRequest,
   /** file-summary tasks: ids + hashes needed to stamp overlays at import. */
   target: TargetMeta.optional(),
   /** core-doc tasks: which document, and the repo hash it caches against. */
   coreDoc: z.object({ kind: CoreDocKind, sourceRepoHash: z.string() }).optional(),
+  /** product tasks: the repo hash the drafted set caches against. */
+  product: z.object({ sourceRepoHash: z.string() }).optional(),
 });
 export type EnrichmentTask = z.infer<typeof EnrichmentTask>;
 
@@ -121,6 +125,8 @@ export interface BuildTaskFileOptions {
   coreDocKinds?: CoreDocKind[];
   /** Also include a subsystem-map proposal task. */
   subsystems?: boolean;
+  /** Also include a product-docs proposal task (decision 0023). */
+  product?: boolean;
   now?: () => string;
 }
 
@@ -162,6 +168,15 @@ export function buildEnrichmentTaskFile(
     tasks.push({ id: "subsystems", kind: "subsystems", request: subsystemsRequestFor(model) });
   }
 
+  if (options.product) {
+    tasks.push({
+      id: "product",
+      kind: "product",
+      request: productRequestFor(model),
+      product: { sourceRepoHash: repoContentHash(model.files) },
+    });
+  }
+
   return {
     taskFile: {
       formatVersion: ENRICH_TASKS_FORMAT_VERSION,
@@ -180,6 +195,8 @@ export interface AppliedResults {
   subsystems?: Subsystem[];
   /** Repo-level narrative from the subsystem-proposal task, when present. */
   subsystemsOverview?: string;
+  /** Drafted product doc set from the product task, when present. */
+  product?: LlmProductSet;
   /** Results that matched a task and parsed cleanly. */
   applied: number;
   failures: { id: string; error: string }[];
@@ -237,6 +254,14 @@ export function applyEnrichmentResults(
             now,
           }),
         );
+      } else if (task.kind === "product") {
+        if (!task.product) throw new Error("task has no product metadata");
+        applied.product = {
+          sourceRepoHash: task.product.sourceRepoHash,
+          model: modelLabel,
+          updatedAt: now(),
+          files: productFilesFromResponse(text),
+        };
       } else {
         const source = subsystemsFromResponse(text);
         applied.subsystems = source.subsystems;

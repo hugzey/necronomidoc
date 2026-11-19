@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Shop API
+  version: "1.0.0"
+paths:
+  /cart/items:
+    post:
+      operationId: addCartItem
+      tags: [cart]
+      summary: Add an item to the cart
+      responses:
+        "204": { description: Added }
+  /checkout:
+    post:
+      operationId: checkout
+      tags: [orders]
+      summary: Pay for the cart and create an order
+      responses:
+        "201": { description: Order created }
+        "402": { description: Payment declined }
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Fetch an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: The order }

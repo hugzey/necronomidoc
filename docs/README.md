@@ -33,6 +33,7 @@ automatic rebuilds, and every operational feature.
 | [Versions & metadata](doc-versions.md) | The per-repo documentation version journal and the (i) info drawer showing generation metadata |
 | [Skills](skills.md) | Generate portable Agent Skills (`SKILL.md` folders) from documented repos |
 | [Artefacts](artefacts.md) | Fill your own `.md`/`.docx` templates from repo knowledge |
+| [Product docs](product-docs.md) | Personas, jobs-to-be-done, **intent interaction sessions**, journeys and user stories (Gherkin/EARS) in `docs/product/` — bound to code with drift detection, traced to tests, diagrammed |
 | [Documentation standard](doc-standard.md) | What to write in your repos so docs serve humans and agents alike, plus the `init-docs` scaffolder |
 
 ## Design record

@@ -58,6 +58,7 @@ import {
 import { MarkdownDoc, MermaidBlock } from "./markdown.js";
 import { HistoricalBanner, RepoInfoDrawer } from "./meta.js";
 import { ApiReference } from "./openapi.js";
+import { FileIntents } from "./product.js";
 import {
   anchorForSymbol,
   buildSymbolIndex,
@@ -1426,6 +1427,7 @@ export function FileView() {
     return (
       <div>
         {breadcrumbs}
+        <FileIntents slug={slug} path={file.path} />
         <MarkdownDoc content={file.content} slug={slug} path={file.path} files={model!.files} />
       </div>
     );
@@ -1455,6 +1457,7 @@ export function FileView() {
           </button>
         )}
       </div>
+      <FileIntents slug={slug} path={file.path} />
       {file.enrichment?.summary && (
         <p className="mb-1">
           <DocText text={file.enrichment.summary} resolve={resolve} />{" "}

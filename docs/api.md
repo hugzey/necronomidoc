@@ -23,7 +23,7 @@ verify each delivery themselves).
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `GET /` and site routes | public* | The doc-site SPA. `/help` serves this documentation. |
-| `ALL /mcp` | public*; bearer when auth is on | Stateless streamable-HTTP MCP endpoint. Tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`, `get_core_doc`, `get_subsystem_overview`, `list_files`. |
+| `ALL /mcp` | public*; bearer when auth is on | Stateless streamable-HTTP MCP endpoint. Tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`, `get_core_doc`, `get_subsystem_overview`, `get_product_overview`, `get_product_doc`, `find_intents_for_code`, `list_files`. |
 | `GET /data/registry.json` | public* | Which repos are published (name, slug, counts). |
 | `GET /data/repos/<slug>/…` | public* | Published manifests: `docmodel.json`, `search.json`, `coredocs.json`, `subsystems.json`, `llms.txt`, `enrichment-report.json`, `versions.json` (the [version journal](doc-versions.md)), `sources.json` + `sources/<path>` ([source snapshots](source-viewer.md), served as `text/plain`), and `versions/<n>/…` (the retained per-version archive for [historical preview](doc-versions.md#previewing-a-past-version)). Nothing else under the data dir is ever served. |
 

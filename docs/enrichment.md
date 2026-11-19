@@ -120,7 +120,8 @@ node packages/cli/dist/index.js enrich <target> --import-results results.json --
 ```
 
 - The task file carries one task per file (same batched prompt as a live run)
-  plus core-doc tasks and — with `--subsystems` — a subsystem-map task.
+  plus core-doc tasks and — with `--subsystems` — a subsystem-map task, and
+  with `--product` a product-docs drafting task ([product-docs.md](product-docs.md)).
 - The import validates every result against the task it answers (schema,
   echoed symbol ids); bad entries are reported and skipped, never published.
 - Overlays are stamped with the content hashes captured at export time, so if

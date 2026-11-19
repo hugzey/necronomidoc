@@ -7,6 +7,7 @@ import {
   type DocModel,
   type EnrichmentOverlay,
   type LlmCoreDoc,
+  type LlmProductSet,
 } from "@necronomidoc/docmodel";
 import {
   CORE_DOCS_SUBDIR,
@@ -15,7 +16,9 @@ import {
   EnrichmentResultsFile,
   EnrichmentTaskFile,
   LLM_CORE_DOCS_FILE,
+  LLM_PRODUCT_FILE,
   LLM_SUBSYSTEMS_FILE,
+  PRODUCT_OVERRIDE_SUBDIR,
   applyEnrichmentResults,
   buildEnrichmentTaskFile,
   generateCoreDocs,
@@ -23,6 +26,8 @@ import {
   loadOverlays,
   mergeEnrichment,
   planCoreDocs,
+  planProductDocs,
+  proposeProductDocs,
   proposeSubsystems,
   renderStaleReview,
   runLlmEnrichment,
@@ -70,6 +75,11 @@ export interface EnrichOptions {
    * against the repo hash. Default true; `--no-core-docs` disables.
    */
   coreDocs?: boolean;
+  /**
+   * Draft product docs (personas, jobs, sessions, stories, journeys) when the
+   * repo has none curated, cached against the repo hash (decision 0023).
+   */
+  product?: boolean;
   /** Injected client (tests); defaults to `resolveLlmClient` over flags + env. */
   client?: LlmClient;
 }
@@ -114,7 +124,23 @@ export interface EnrichResult {
   subsystemsProposed?: number;
   /** Set unless core docs were disabled for the run. */
   coreDocs?: CoreDocsRunSummary;
+  /** Set when `--product` ran: what the planner decided and what was drafted. */
+  product?: ProductRunSummary;
   published: boolean;
+}
+
+/** What the product-docs step of an enrich run did (or would do). */
+export interface ProductRunSummary {
+  reason: "curated" | "fresh" | "missing" | "stale";
+  /** Draft files written (0 when skipped or dry). */
+  written: number;
+  error?: string;
+}
+
+/** Persist an LLM-drafted product set (whole-set semantics, like subsystems). */
+function persistLlmProduct(enrichmentDir: string, set: LlmProductSet): void {
+  mkdirSync(enrichmentDir, { recursive: true });
+  writeFileSync(join(enrichmentDir, LLM_PRODUCT_FILE), JSON.stringify(set, null, 2) + "\n");
 }
 
 /** Resolve target → working tree: registered repo id, local dir, or git URL. */
@@ -253,6 +279,31 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       }
     }
 
+    let product: ProductRunSummary | undefined;
+    if (options.product) {
+      const plan = planProductDocs(model, {
+        overrideDir: join(enrichmentDir, PRODUCT_OVERRIDE_SUBDIR),
+        llmDir: enrichmentDir,
+      });
+      product = { reason: plan.reason, written: 0 };
+      const budgetLeft =
+        (options.maxTokens ?? DEFAULT_MAX_TOKENS) - (report.inputTokens + report.outputTokens);
+      if (plan.needed && !options.dryRun && budgetLeft <= 0) {
+        product.error = "token budget reached before drafting product docs — run again to continue";
+      } else if (plan.needed && !options.dryRun) {
+        try {
+          const proposal = await proposeProductDocs(mergedView(), client);
+          report.calls++;
+          report.inputTokens += proposal.inputTokens;
+          report.outputTokens += proposal.outputTokens;
+          persistLlmProduct(enrichmentDir, proposal.set);
+          product.written = proposal.set.files.length;
+        } catch (err) {
+          product.error = (err as Error).message;
+        }
+      }
+    }
+
     let published = false;
     if (!options.dryRun) {
       if (newOverlays.length > 0) persistLlmOverlays(enrichmentDir, newOverlays);
@@ -265,7 +316,7 @@ export async function enrichRepo(options: EnrichOptions): Promise<EnrichResult> 
       published = true;
     }
 
-    return { slug, report, subsystemsProposed, coreDocs, published };
+    return { slug, report, subsystemsProposed, coreDocs, product, published };
   } finally {
     cleanup?.();
   }
@@ -284,6 +335,8 @@ export interface ExportTasksOptions {
   subsystems?: boolean;
   /** Include core-doc tasks (mirrors the live run's default-on behavior). */
   coreDocs?: boolean;
+  /** Include a product-docs drafting task when the planner says one is needed. */
+  product?: boolean;
   /** Where to write the task file. */
   outFile: string;
 }
@@ -294,6 +347,7 @@ export interface ExportTasksResult {
   fileTasks: number;
   coreDocTasks: CoreDocKind[];
   subsystemsTask: boolean;
+  productTask: boolean;
   skippedHuman: number;
   skippedFresh: number;
   filesOverCap: number;
@@ -333,12 +387,19 @@ export async function exportEnrichTasks(options: ExportTasksOptions): Promise<Ex
     // core-doc/subsystem prompts include existing file summaries. (A live run
     // also folds in the summaries it just generated; at export time those are
     // sibling tasks in this same file, so they cannot be included.)
+    const productTask =
+      options.product === true &&
+      planProductDocs(model, {
+        overrideDir: join(enrichmentDir, PRODUCT_OVERRIDE_SUBDIR),
+        llmDir: enrichmentDir,
+      }).needed;
     const { taskFile, plan } = buildEnrichmentTaskFile(mergeEnrichment(model, { overlays }), {
       overlays,
       readSource: readSourceFrom(repoDir),
       maxFiles: options.maxFiles,
       coreDocKinds,
       subsystems: options.subsystems,
+      product: productTask,
     });
     const outFile = resolve(options.outFile);
     writeFileSync(outFile, JSON.stringify(taskFile, null, 2) + "\n");
@@ -348,6 +409,7 @@ export async function exportEnrichTasks(options: ExportTasksOptions): Promise<Ex
       fileTasks: plan.work.length,
       coreDocTasks: coreDocKinds,
       subsystemsTask: options.subsystems === true,
+      productTask,
       skippedHuman: plan.skippedHuman,
       skippedFresh: plan.skippedFresh,
       filesOverCap: plan.filesOverCap,
@@ -374,6 +436,7 @@ export interface ImportResultsResult {
   overlaysWritten: number;
   coreDocsWritten: number;
   subsystemsProposed?: number;
+  productDocsDrafted?: number;
   failures: { id: string; error: string }[];
   unmatchedResults: string[];
   missingTasks: string[];
@@ -436,6 +499,8 @@ export async function importEnrichResults(
     if (applied.subsystems && applied.subsystems.length > 0) {
       persistLlmSubsystems(enrichmentDir, applied.subsystems, applied.subsystemsOverview);
     }
+    // Same rule: an empty drafted set must not wipe a previous one.
+    if (applied.product && applied.product.files.length > 0) persistLlmProduct(enrichmentDir, applied.product);
     publishModel(dataDir, model, repoDir, {
       trigger: "enrich",
       adapter,
@@ -448,6 +513,7 @@ export async function importEnrichResults(
       overlaysWritten: applied.overlays.length,
       coreDocsWritten: applied.coreDocs.length,
       subsystemsProposed: applied.subsystems?.length,
+      productDocsDrafted: applied.product?.files.length,
       failures: applied.failures,
       unmatchedResults: applied.unmatchedResults,
       missingTasks: applied.missingTasks,

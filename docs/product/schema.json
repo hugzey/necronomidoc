@@ -1,0 +1,706 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/hugzey/necronomidoc/product-frontmatter.schema.json",
+  "title": "necronomidoc product document frontmatter",
+  "description": "YAML frontmatter of a docs/product/ document. The id prefix selects the type: PER persona, JOB job (intent), EPIC epic, STORY user story, JRN journey map, SES intent interaction session.",
+  "oneOf": [
+    {
+      "title": "persona",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PER-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "frustrations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "context": {
+          "type": "string"
+        },
+        "expertise": {
+          "type": "string",
+          "enum": [
+            "novice",
+            "intermediate",
+            "expert"
+          ]
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "job",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^JOB-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "personas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "situation": {
+          "type": "string"
+        },
+        "motivation": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "importance": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "successMetrics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "situation",
+        "motivation",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "epic",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^EPIC-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "story",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^STORY-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "want": {
+          "type": "string"
+        },
+        "soThat": {
+          "type": "string"
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "epic": {
+          "type": "string"
+        },
+        "activity": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "must",
+            "should",
+            "could",
+            "wont"
+          ]
+        },
+        "code": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "persona",
+        "want",
+        "soThat"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "journey",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^JRN-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "goal": {
+                "type": "string"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "touchpoints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "thoughts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "emotion": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "painPoints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "opportunities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "stories": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "persona",
+        "stages"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "title": "session",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^SES-\\d+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "persona",
+            "job",
+            "epic",
+            "story",
+            "journey",
+            "session"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "proposed",
+            "accepted",
+            "implemented",
+            "deprecated"
+          ],
+          "default": "draft"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "verified": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "object",
+          "properties": {
+            "channel": {
+              "type": "string"
+            },
+            "auth": {
+              "type": "string"
+            },
+            "preconditions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^S\\d+$"
+              },
+              "actor": {
+                "type": "string",
+                "default": "user"
+              },
+              "action": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "system": {
+                "type": "string"
+              },
+              "expects": {
+                "type": "string"
+              },
+              "code": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "emotion": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "next": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string"
+              },
+              "branches": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "when": {
+                      "type": "string"
+                    },
+                    "goto": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "when",
+                    "goto"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              }
+            },
+            "required": [
+              "id",
+              "action"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^OUT-\\d+$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "fulfilled",
+                  "partial",
+                  "diverted",
+                  "abandoned",
+                  "failed"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "criteria": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "stories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "journey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "persona",
+        "job",
+        "intent",
+        "steps",
+        "outcomes"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
