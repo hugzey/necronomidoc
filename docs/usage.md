@@ -172,8 +172,28 @@ claude mcp add --transport http necronomidoc http://localhost:4319/mcp
 # team-private server? add: --header "Authorization: Bearer $DOCS_TOKEN"
 ```
 
-(Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
-tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
+(Or in Cursor / any MCP client: add an HTTP MCP server at that URL.)
+
+Then **install the built-in `using-necronomidoc` skill**. It teaches the
+agent the workflow:
+- start each task with `get_context_for_task`;
+- call `is_this_a_duplicate` before writing new code;
+- gate each diff with `check_change` and run its tests;
+- propose doc fixes.
+
+The easiest way is the **Skills** page of the site (`/skills`). It shows both
+commands for this server with copy buttons, and has **Copy SKILL.md** and
+**Download zip** buttons. From a terminal:
+
+```bash
+mkdir -p ~/.claude/skills/using-necronomidoc && \
+  curl -fsSL http://localhost:4319/api/agent-skill/SKILL.md -o ~/.claude/skills/using-necronomidoc/SKILL.md
+# or, from the CLI (no server needed):
+necronomidoc skills --builtin --mcp-url http://localhost:4319/mcp --out ~/.claude/skills
+```
+
+Every tool is listed in [Agent tools](agent-tools.md). The original ten:
+`list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
 `get_core_doc`, `get_subsystem_overview`, `get_product_overview`,
 `get_product_doc`, `find_intents_for_code`, `list_files`. Every response carries
 provenance and a `stale` flag; `get_core_doc` serves the repo's overview /

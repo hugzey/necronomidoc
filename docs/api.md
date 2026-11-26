@@ -41,6 +41,16 @@ these behind the session/bearer credential.
 | `POST /api/proposals/<id>/accept` / `…/reject` | **admin** | Review a draft (optional `{"note":"…"}`). Accepting writes it into the server-side curation tier and queues a rebuild of a registered repo (`rebuild: queued`). |
 | `GET /api/misses[?repo=&limit=]` | **admin** | MCP queries that returned nothing useful, aggregated by frequency (`mode` = the `DOCS_MISS_LOG` privacy mode). |
 
+## Agent skill
+
+The built-in [`using-necronomidoc`](skills.md#the-built-in-using-necronomidoc-skill) skill, with this server's MCP URL filled in. It uses the request origin, or `X-Forwarded-Host`/`-Proto` behind a proxy.
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/agent-skill` | public* | JSON: `name`, `description`, `body`, the rendered `skillMd`, `mcpUrl`, the `claude mcp add` `connectCommand`, `installPath`. |
+| `GET /api/agent-skill/SKILL.md` | public* | The SKILL.md file itself (`text/markdown`), for `curl -o`. |
+| `GET /api/agent-skill/download` | public* | `using-necronomidoc.zip` holding `using-necronomidoc/SKILL.md`. |
+
 ## Triggering builds
 
 | Endpoint | Auth | Purpose |

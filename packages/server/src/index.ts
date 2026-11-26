@@ -22,7 +22,7 @@ export {
   readMisses,
   sessionCheckSkeleton,
 } from "@necronomidoc/mcp";
-export { mergeSynonymsFile } from "@necronomidoc/enrichment";
+export { BUILTIN_SKILL_ID, builtinSkillMd, mcpConnectCommand, mergeSynonymsFile } from "@necronomidoc/enrichment";
 export * from "./auth.js";
 export * from "./backup.js";
 export * from "./datadir.js";

@@ -83,6 +83,14 @@ quality gaps were the same ones every time:
 11. **Learning from misses.** Queries with no useful hit are logged
     (`full` / `hashed` / `off`, `DOCS_MISS_LOG`). They feed back as
     undocumented concepts, a `misses` CLI/REST view, and suggested synonyms.
+12. **A built-in `using-necronomidoc` skill.** necronomidoc ships one fixed
+    Agent Skill that teaches the workflow above. It is available from the
+    site's Skills page (copy and download buttons), from
+    `/api/agent-skill[/SKILL.md|/download]`, and from
+    `necronomidoc skills --builtin`, with the serving instance's MCP URL
+    filled in. A test fails if a registered MCP tool is missing from the
+    skill. The LLM skill generator's prompt now points generated skills at
+    the same tools.
 
 ## Consequences
 

@@ -4,7 +4,8 @@ import { Hono, type Context } from "hono";
 import { DocModel, slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
 import { ManifestStore, MissLog, aggregateMisses, handleMcpRequest, missLogPath, readMisses } from "@necronomidoc/mcp";
 import { ProposalStore, listProposals, readProposal, reviewProposal } from "./proposals.js";
-import { LlmConfigError } from "@necronomidoc/enrichment";
+import JSZip from "jszip";
+import { BUILTIN_SKILL_ID, LlmConfigError, builtinSkill, builtinSkillMd, mcpConnectCommand } from "@necronomidoc/enrichment";
 import { artefactFilePath, generateArtefact, readArtefactIndex, readArtefactRecord } from "./artefacts.js";
 import { installAuth } from "./auth.js";
 import { buildRepo, looksLikeGitUrl, publishModel } from "./build.js";
@@ -442,6 +443,44 @@ export function createApp(config: NecronomidocConfig): App {
   const cachedArtefactIndex = mtimeCached(join(config.dataDir, "artefacts", "index.json"), () =>
     readArtefactIndex(config.dataDir),
   );
+
+  // The built-in `using-necronomidoc` skill (decision 0024): a fixed playbook
+  // for working with this server, with this instance's MCP URL filled in.
+  // Behind a reverse proxy the forwarded host/proto name the public origin.
+  const builtinOptions = (c: Context) => {
+    const url = new URL(c.req.url);
+    const host = c.req.header("x-forwarded-host")?.split(",")[0]?.trim() || url.host;
+    const proto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() || url.protocol.replace(/:$/, "");
+    const safe = /^[A-Za-z0-9.-]+(:\d+)?$/.test(host) && /^https?$/.test(proto);
+    return { mcpUrl: safe ? `${proto}://${host}/mcp` : undefined, authRequired: config.authRequired };
+  };
+  app.get("/api/agent-skill", (c) => {
+    const options = builtinOptions(c);
+    const skill = builtinSkill(options);
+    return c.json({
+      ...skill,
+      skillMd: builtinSkillMd(options),
+      mcpUrl: options.mcpUrl,
+      connectCommand: mcpConnectCommand(options),
+      installPath: `~/.claude/skills/${BUILTIN_SKILL_ID}/SKILL.md`,
+    });
+  });
+  app.get("/api/agent-skill/SKILL.md", (c) =>
+    new Response(builtinSkillMd(builtinOptions(c)), {
+      headers: { "content-type": "text/markdown; charset=utf-8" },
+    }),
+  );
+  app.get("/api/agent-skill/download", async (c) => {
+    const zip = new JSZip();
+    zip.file(`${BUILTIN_SKILL_ID}/SKILL.md`, builtinSkillMd(builtinOptions(c)));
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    return new Response(bytes, {
+      headers: {
+        "content-type": "application/zip",
+        "content-disposition": `attachment; filename="${BUILTIN_SKILL_ID}.zip"`,
+      },
+    });
+  });
 
   app.get("/api/skills", (c) => c.json(cachedSkillIndex()));
 

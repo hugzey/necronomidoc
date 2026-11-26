@@ -23,6 +23,11 @@ pay for this in one or two tool calls instead of six.
 Responses are compact JSON, not pretty-printed, because indentation costs
 tokens and carries no information.
 
+**Teach your agent this workflow** with the built-in
+[`using-necronomidoc` skill](skills.md#the-built-in-using-necronomidoc-skill).
+Copy or download it from the site's **Skills** page, or run
+`necronomidoc skills --builtin`.
+
 ## One call per task: `get_context_for_task`
 
 ```json

@@ -30,6 +30,9 @@ import {
   reviewProposal,
   sessionCheckSkeleton,
   mergeSynonymsFile,
+  BUILTIN_SKILL_ID,
+  builtinSkillMd,
+  mcpConnectCommand,
   newProductDoc,
   readPublishedProductManifest,
   KNOWN_PROVIDERS,
@@ -93,6 +96,7 @@ Usage:
                  [--subsystems] [--product] [--no-core-docs] [--review-stale]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
                  [--name <n>] [--ref <ref>] [--data-dir <dir>]
+  necronomidoc skills --builtin [--out <skills-dir>] [--mcp-url <url>] [--auth]
   necronomidoc skills [<repo-slug> | --repos <a,b,c> | --all] [--out <dir>] [--force]
                  [--dry-run] [--provider <p>] [--model <id>] [--base-url <url>]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
@@ -354,6 +358,23 @@ function scopeFrom(flags: Flags, positionalIndex: number): ScopeSelection {
 }
 
 async function cmdSkills(flags: Flags): Promise<number> {
+  // The built-in `using-necronomidoc` skill: no LLM, no built repo needed.
+  if (flags["builtin"] === true) {
+    const options = { mcpUrl: str(flags, "mcp-url"), authRequired: flags["auth"] === true };
+    const md = builtinSkillMd(options);
+    const out = str(flags, "out");
+    if (!out) {
+      process.stdout.write(md);
+      return 0;
+    }
+    const file = join(resolve(out), BUILTIN_SKILL_ID, "SKILL.md");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, md);
+    console.log(`✓ wrote ${file}`);
+    if (!options.mcpUrl) console.log("  tip: pass --mcp-url https://<your-docs-server>/mcp to fill in your server's address");
+    console.log(`  connect the MCP server too:\n  ${mcpConnectCommand(options).replace(/\n/g, "\n  ")}`);
+    return 0;
+  }
   const config = loadConfig({ dataDir: str(flags, "data-dir") });
 
   // Agent mode, step 2: validate + persist the agent's skill set.

@@ -77,6 +77,10 @@ node packages/cli/dist/index.js repo add https://github.com/acme/widgets.git \
 # fill documentation gaps with LLM summaries (any provider, or no key at all)
 ANTHROPIC_API_KEY=sk-ant-… node packages/cli/dist/index.js enrich widgets
 
+# install the built-in skill that teaches agents the necronomidoc workflow
+# (also copyable / downloadable from the site's Skills page)
+node packages/cli/dist/index.js skills --builtin --mcp-url http://localhost:4319/mcp --out ~/.claude/skills
+
 # generate agent skills / fill a template from everything documented
 node packages/cli/dist/index.js skills --all --out ~/.claude/skills
 node packages/cli/dist/index.js artefact release-notes.md --all --out filled.md
