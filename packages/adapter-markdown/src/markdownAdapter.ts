@@ -82,6 +82,9 @@ function sweep(dir: string, rel = "", out: string[] = []): string[] {
     // docs under .necronomidoc/docs/) is curation input published through the
     // core-docs pipeline, not repo content to document twice.
     if (entry.name.startsWith(".")) continue;
+    // Product-doc templates (docs/product/_templates/, decision 0023) are
+    // scaffolding with TODO markers, not documentation to publish.
+    if (entry.isDirectory() && entry.name === "_templates") continue;
     const abs = join(dir, entry.name);
     const relPath = rel ? `${rel}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
@@ -93,16 +96,44 @@ function sweep(dir: string, rel = "", out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * The frontmatter block's last line index (0-based) and its `title:` value,
+ * when the file opens with `---`. Only the title is read — a full YAML parse
+ * isn't needed for prose extraction.
+ */
+function frontmatterRange(lines: string[]): { end: number; title?: string } | undefined {
+  if (lines[0]?.trim() !== "---") return undefined;
+  const end = lines.findIndex((l, i) => i > 0 && (l.trim() === "---" || l.trim() === "..."));
+  if (end === -1) return undefined;
+  const titleLine = lines.slice(1, end).find((l) => /^title:\s*\S/.test(l));
+  const title = titleLine
+    ?.replace(/^title:\s*/, "")
+    .replace(/\s+#.*$/, "")
+    .replace(/^(["'])(.*)\1$/, "$2")
+    .trim();
+  return { end, title: title || undefined };
+}
+
 /** Extract one markdown file into a DocFile (headings h1–h3 become sections). */
 export function extractMarkdownFile(repoSlug: string, relPath: string, raw: string): DocFile {
   const truncated = raw.length > MAX_CONTENT;
   const content = truncated ? `${raw.slice(0, MAX_CONTENT)}\n\n…(truncated)` : raw;
   const lines = raw.split("\n");
-  const headings = parseHeadings(lines);
+  // YAML frontmatter (`---` … `---` on line 1) is metadata, not prose: blank
+  // it for heading/summary analysis (keeping line numbers) so a `# comment`
+  // inside it can't become a heading and its keys never become the summary.
+  const frontmatter = frontmatterRange(lines);
+  const analysed = frontmatter
+    ? lines.map((line, i) => (i <= frontmatter.end ? "" : line))
+    : lines;
+  const headings = parseHeadings(analysed);
 
   const h1 = headings.find((h) => h.level === 1);
-  const title = h1?.text ?? relPath.split("/").pop()!.replace(/\.(md|markdown|mdx)$/i, "");
-  const intro = firstParagraph(lines, h1 ? h1.line : 0, headings.find((h) => h !== h1)?.line ?? lines.length);
+  const title =
+    h1?.text ??
+    frontmatter?.title ??
+    relPath.split("/").pop()!.replace(/\.(md|markdown|mdx)$/i, "");
+  const intro = firstParagraph(analysed, h1 ? h1.line : 0, headings.find((h) => h !== h1)?.line ?? lines.length);
 
   const sections = headings.filter((h) => h.level <= 3 && h !== h1);
   const anchorCounts = new Map<string, number>();
@@ -111,7 +142,7 @@ export function extractMarkdownFile(repoSlug: string, relPath: string, raw: stri
     const seen = anchorCounts.get(anchor) ?? 0;
     anchorCounts.set(anchor, seen + 1);
     const end = sections[i + 1]?.line ? sections[i + 1]!.line - 1 : lines.length;
-    const summary = firstParagraph(lines, h.line, end);
+    const summary = firstParagraph(analysed, h.line, end);
     return {
       id: makeSymbolId(repoSlug, relPath, anchor, seen > 0 ? seen : undefined),
       name: h.text,

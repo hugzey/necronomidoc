@@ -9,6 +9,7 @@ import {
   enrichRepo,
   exportArtefactTasks,
   exportEnrichTasks,
+  exportProductDrafts,
   exportSkillTasks,
   exportState,
   generateArtefact,
@@ -16,6 +17,10 @@ import {
   importArtefactResults,
   importEnrichResults,
   importSkillResults,
+  initProductDocs,
+  lintProduct,
+  newProductDoc,
+  readPublishedProductManifest,
   KNOWN_PROVIDERS,
   LLM_PROVIDERS,
   listAdapters,
@@ -74,7 +79,7 @@ Usage:
   necronomidoc build <path-or-git-url> [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc enrich <repo-id-or-path-or-url> [--dry-run] [--max-files <n>]
                  [--max-tokens <n>] [--provider <p>] [--model <id>] [--base-url <url>]
-                 [--subsystems] [--no-core-docs] [--review-stale]
+                 [--subsystems] [--product] [--no-core-docs] [--review-stale]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
                  [--name <n>] [--ref <ref>] [--data-dir <dir>]
   necronomidoc skills [<repo-slug> | --repos <a,b,c> | --all] [--out <dir>] [--force]
@@ -87,6 +92,10 @@ Usage:
                  [--export-tasks <tasks.json>] [--data-dir <dir>]
   necronomidoc artefact --import-results <results.json> --tasks <tasks.json> [--out <file>]
   necronomidoc init-docs <repo-path> [--force]
+  necronomidoc product init [<repo-path>] [--force]
+  necronomidoc product new <persona|job|epic|story|journey|session> --title "<title>" [--dir <repo-path>]
+  necronomidoc product lint [<repo-path>] [--strict] [--json]
+  necronomidoc product export <repo-id> [--out <dir>] [--force] [--data-dir <dir>]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
@@ -170,15 +179,20 @@ async function cmdEnrich(flags: Flags): Promise<number> {
       maxFiles: int(flags, "max-files"),
       subsystems: flags["subsystems"] === true,
       coreDocs: flags["no-core-docs"] === true ? false : undefined,
+      product: flags["product"] === true,
       outFile: exportTasks,
     });
     const total =
-      result.fileTasks + result.coreDocTasks.length + (result.subsystemsTask ? 1 : 0);
+      result.fileTasks +
+      result.coreDocTasks.length +
+      (result.subsystemsTask ? 1 : 0) +
+      (result.productTask ? 1 : 0);
     console.log(`✓ exported ${total} enrichment task${total === 1 ? "" : "s"} for ${result.slug} → ${result.outFile}`);
     console.log(
       `  ${result.fileTasks} file summaries` +
         (result.coreDocTasks.length > 0 ? `, core docs: ${result.coreDocTasks.join(", ")}` : "") +
-        (result.subsystemsTask ? ", 1 subsystem map" : ""),
+        (result.subsystemsTask ? ", 1 subsystem map" : "") +
+        (result.productTask ? ", 1 product-docs draft" : ""),
     );
     console.log(
       `  skipped: ${result.skippedHuman} human-curated, ${result.skippedFresh} unchanged (hash cache)` +
@@ -216,6 +230,9 @@ async function cmdEnrich(flags: Flags): Promise<number> {
       `  ${result.overlaysWritten} overlays, ${result.coreDocsWritten} core docs` +
         (result.subsystemsProposed !== undefined
           ? `, ${result.subsystemsProposed} subsystems proposed`
+          : "") +
+        (result.productDocsDrafted !== undefined
+          ? `, ${result.productDocsDrafted} product docs drafted`
           : ""),
     );
     if (result.missingTasks.length > 0) {
@@ -252,9 +269,23 @@ async function cmdEnrich(flags: Flags): Promise<number> {
     dryRun,
     subsystems: flags["subsystems"] === true,
     coreDocs: flags["no-core-docs"] === true ? false : undefined,
+    product: flags["product"] === true,
   });
 
   const r = result.report;
+  if (result.product) {
+    const p = result.product;
+    const why = {
+      curated: "skipped — the repo has curated docs/product/ (never LLM-written)",
+      fresh: "cached drafts still match the code",
+      missing: dryRun ? "would draft a product doc set" : `drafted ${p.written} product docs`,
+      stale: dryRun ? "would re-draft (code changed since the drafts)" : `re-drafted ${p.written} product docs`,
+    }[p.reason];
+    console.log(`  product docs: ${p.error ? `✗ ${p.error}` : why}`);
+    if (!dryRun && p.written > 0) {
+      console.log(`    review them on the site, then promote: necronomidoc product export ${result.slug} --out docs/product`);
+    }
+  }
   if (dryRun) {
     console.log(`Dry run for ${result.slug} (model ${r.model}):`);
     console.log(
@@ -487,6 +518,81 @@ function cmdInitDocs(flags: Flags): number {
   return 0;
 }
 
+/** `necronomidoc product …` — the product-doc standard's tooling (decision 0023). */
+async function cmdProduct(flags: Flags): Promise<number> {
+  const [, action, arg] = flags._ as string[];
+  switch (action) {
+    case "init": {
+      const result = initProductDocs(arg ?? ".", { force: flags["force"] === true });
+      console.log(`✓ product docs scaffolded under ${result.dir}`);
+      for (const label of result.written) console.log(`  + ${label}`);
+      for (const label of result.skipped) console.log(`  = ${label} (exists — kept; --force overwrites)`);
+      console.log('Next: necronomidoc product new persona --title "…" (then job, session, story…).');
+      return 0;
+    }
+    case "new": {
+      const title = str(flags, "title");
+      if (!arg || !title) {
+        console.error('product new: usage — product new <type> --title "<title>" [--dir <repo-path>]');
+        return 1;
+      }
+      const created = newProductDoc(str(flags, "dir") ?? ".", arg, title);
+      console.log(`✓ ${created.id} → ${created.path}`);
+      console.log("  replace every TODO(doc) marker, then: necronomidoc product lint");
+      return 0;
+    }
+    case "lint": {
+      const manifest = await lintProduct(arg ?? ".");
+      if (flags["json"] === true) {
+        console.log(JSON.stringify({ findings: manifest.findings, coverage: manifest.coverage }, null, 2));
+      } else {
+        const counts = new Map<string, number>();
+        for (const d of manifest.docs) counts.set(d.type, (counts.get(d.type) ?? 0) + 1);
+        console.log(
+          `Product docs: ${manifest.docs.length} (${[...counts].map(([t, n]) => `${n} ${t}`).join(", ") || "none"})`,
+        );
+        const c = manifest.coverage;
+        console.log(
+          `  tests cite ${c.criteriaTested}/${c.criteria} acceptance criteria, ${c.requirementsTested}/${c.requirements} requirements, ${c.outcomesTested}/${c.outcomes} session outcomes`,
+        );
+        console.log(
+          `  code bindings: ${c.bindings} (${c.bindingsBroken} broken) — sessions cover ${c.surfacesCovered}/${c.surfaces} interaction surfaces`,
+        );
+        const icons = { error: "✗", warn: "⚠", info: "ℹ" } as const;
+        for (const f of manifest.findings) {
+          console.log(`  ${icons[f.level]} ${f.docId ?? f.path ?? ""}${f.docId || f.path ? ": " : ""}${f.message} [${f.code}]`);
+        }
+      }
+      const errors = manifest.findings.filter((f) => f.level === "error").length;
+      const warnings = manifest.findings.filter((f) => f.level === "warn").length;
+      if (errors > 0 || (flags["strict"] === true && warnings > 0)) {
+        if (flags["json"] !== true) console.log(`✗ ${errors} error(s), ${warnings} warning(s)`);
+        return 1;
+      }
+      if (flags["json"] !== true) console.log(`✓ no errors (${warnings} warning(s))`);
+      return 0;
+    }
+    case "export": {
+      if (!arg) {
+        console.error("product export: missing <repo-id>");
+        return 1;
+      }
+      const config = loadConfig({ dataDir: str(flags, "data-dir") });
+      const out = str(flags, "out") ?? "docs/product";
+      const result = exportProductDrafts(config.dataDir, arg, out, { force: flags["force"] === true });
+      if (result.stale) console.warn("  ⚠ these drafts predate the latest code — consider re-running enrich --product");
+      console.log(`✓ exported ${result.written.length} drafted product docs → ${out}`);
+      for (const label of result.written) console.log(`  + ${label}`);
+      for (const label of result.skipped) console.log(`  = ${label} (exists — kept; --force overwrites)`);
+      console.log("Review, set status: accepted where true, commit — curated docs replace the drafts.");
+      return 0;
+    }
+    default:
+      console.error("product: one of init | new | lint | export");
+      return 1;
+  }
+}
+
 function cmdServe(flags: Flags): number {
   const { config } = startServer({
     dataDir: str(flags, "data-dir"),
@@ -713,6 +819,19 @@ async function cmdDoctor(flags: Flags): Promise<number> {
         console.log(`      ${icons[finding.level]} docs: ${finding.message}`);
       }
     }
+    // Product docs (decision 0023): summarize the published manifest —
+    // advisory, like the doc-standard checks.
+    const product = readPublishedProductManifest(config.dataDir, repo.id);
+    if (product) {
+      const errors = product.findings.filter((f) => f.level === "error").length;
+      const warnings = product.findings.filter((f) => f.level === "warn").length;
+      const c = product.coverage;
+      console.log(
+        product.source === "none"
+          ? "      ℹ product: no docs/product/ yet — `necronomidoc product init` scaffolds it"
+          : `      ${errors > 0 ? "⚠" : "✓"} product (${product.source}): ${product.docs.length} docs, ${errors} errors, ${warnings} warnings; tests cite ${c.criteriaTested}/${c.criteria} criteria, ${c.outcomesTested}/${c.outcomes} outcomes; ${c.bindingsBroken} broken bindings`,
+      );
+    }
   }
 
   if (affected > 0) {
@@ -750,6 +869,8 @@ async function main(): Promise<number> {
       return cmdArtefact(flags);
     case "init-docs":
       return cmdInitDocs(flags);
+    case "product":
+      return cmdProduct(flags);
     case "serve":
       return cmdServe(flags);
     case "repo":

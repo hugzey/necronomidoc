@@ -400,6 +400,22 @@ export function Sidebar({
               Subsystems
             </Link>
           )}
+          {slug && (
+            <div>
+              <div className="mb-1 text-xs font-medium uppercase text-base-content/50">Product</div>
+              <ul className="menu menu-sm w-full p-0">
+                <li>
+                  <Link to={`/r/${slug}/product`}>Intents & sessions</Link>
+                </li>
+                <li>
+                  <Link to={`/r/${slug}/product/map`}>Story map</Link>
+                </li>
+                <li>
+                  <Link to={`/r/${slug}/product/trace`}>Traceability</Link>
+                </li>
+              </ul>
+            </div>
+          )}
           {slug && specFiles.length > 0 && (
             <div>
               <div className="mb-1 text-xs font-medium uppercase text-base-content/50">API Reference</div>

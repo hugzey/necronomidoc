@@ -7,6 +7,7 @@ export * from "./overlays.js";
 export * from "./merge.js";
 export * from "./staleness.js";
 export * from "./subsystems.js";
+export * from "./product/index.js";
 export * from "./llm/client.js";
 export * from "./llm/writer.js";
 export * from "./llm/providers/anthropic.js";

@@ -11,6 +11,8 @@ import type {
   DocVersionEntry,
   GenerationScope,
   IngestStatusResponse,
+  ProductDoc,
+  ProductManifest,
   Registry,
   SkillSet,
   SkillSetIndex,
@@ -32,6 +34,8 @@ export type {
   DocSymbolShape,
   DocVersionEntry,
   GenerationScope,
+  ProductDoc,
+  ProductManifest,
   Registry,
   SkillSet,
   SkillSetIndex,
@@ -115,6 +119,16 @@ export async function fetchCoreDocs(slug: string): Promise<CoreDocsManifest | un
   const res = await fetch(`/data/repos/${slug}/coredocs.json`);
   if (!res.ok) return undefined;
   return (await res.json()) as CoreDocsManifest;
+}
+
+/**
+ * The repo's product docs manifest (decision 0023): personas, jobs, intent
+ * interaction sessions, journeys, stories. Undefined in static-export mode and
+ * for repos built before the feature shipped.
+ */
+export async function fetchProduct(slug: string): Promise<ProductManifest | undefined> {
+  if (injectedData()) return undefined;
+  return getOptionalJson<ProductManifest>(`/data/repos/${slug}/product.json`);
 }
 
 /**

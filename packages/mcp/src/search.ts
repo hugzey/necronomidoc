@@ -3,6 +3,8 @@ import type {
   CoreDocsManifest,
   DocModel,
   DocSymbolShape,
+  ProductDoc,
+  ProductManifest,
   SearchDoc,
   SubsystemsManifest,
 } from "@necronomidoc/docmodel";
@@ -27,6 +29,7 @@ export function buildCorpusDocs(
   model: DocModel,
   subsystems?: SubsystemsManifest,
   coreDocs?: CoreDocsManifest,
+  product?: ProductManifest,
 ): SearchDoc[] {
   const docs: SearchDoc[] = [];
   const repo = model.repo.slug;
@@ -115,7 +118,56 @@ export function buildCorpusDocs(
       text: [doc.kind, doc.title, doc.content.slice(0, 4000)].join(" "),
     });
   }
+
+  for (const doc of product?.docs ?? []) {
+    docs.push({
+      id: `${repo}:product:${doc.id}`,
+      type: "product",
+      repo,
+      path: doc.path,
+      name: `${doc.id} ${doc.title}`,
+      kind: doc.type,
+      summary: productSummary(doc),
+      text: productText(doc).slice(0, 4000),
+    });
+  }
   return docs;
+}
+
+/** One-line statement of a product doc — its canonical sentence form. */
+export function productSummary(doc: ProductDoc): string {
+  switch (doc.type) {
+    case "persona":
+      return doc.summary;
+    case "job":
+      return `When ${doc.situation}, I want to ${doc.motivation}, so I can ${doc.outcome}.`;
+    case "epic":
+      return doc.summary;
+    case "story":
+      return `As ${doc.persona}, I want ${doc.want}, so that ${doc.soThat}.`;
+    case "journey":
+      return `${doc.stages.length}-stage journey: ${doc.stages.map((s) => s.name).join(" → ")}`;
+    case "session":
+      return `Intent: ${doc.intent}`;
+  }
+}
+
+/** Searchable text of a product doc: structured fields plus criteria and body. */
+function productText(doc: ProductDoc): string {
+  const parts: (string | undefined)[] = [doc.id, doc.title, productSummary(doc), ...doc.tags];
+  if (doc.type === "persona") parts.push(doc.role, ...doc.goals, ...doc.frustrations, doc.context);
+  if (doc.type === "session") {
+    parts.push(doc.trigger);
+    for (const step of doc.steps) parts.push(step.action, step.surface, step.system, step.expects);
+    for (const outcome of doc.outcomes) parts.push(outcome.title, ...outcome.criteria);
+  }
+  if (doc.type === "journey") {
+    for (const stage of doc.stages) parts.push(stage.name, ...stage.actions, ...stage.painPoints, ...stage.opportunities);
+  }
+  for (const ac of doc.acceptance) parts.push(ac.title, ac.text);
+  for (const req of doc.requirements) parts.push(req.text);
+  parts.push(doc.body.slice(0, 1500));
+  return parts.filter(Boolean).join(" ");
 }
 
 /** Build an in-memory MiniSearch index for a repo's corpus. */
@@ -123,9 +175,10 @@ export function buildIndex(
   model: DocModel,
   subsystems?: SubsystemsManifest,
   coreDocs?: CoreDocsManifest,
+  product?: ProductManifest,
 ): MiniSearch<SearchDoc> {
   const mini = new MiniSearch<SearchDoc>(SEARCH_OPTIONS);
-  mini.addAll(buildCorpusDocs(model, subsystems, coreDocs));
+  mini.addAll(buildCorpusDocs(model, subsystems, coreDocs, product));
   return mini;
 }
 

@@ -90,6 +90,20 @@ export function MermaidBlock({ code }: { code: string }) {
  * handbook uses one over its bundled pages); when it declines a relative
  * link, the link degrades to plain text rather than a dead navigation.
  */
+/**
+ * Drop a leading YAML frontmatter block (`---` … `---`). It is metadata —
+ * product docs (decision 0023) render it as structured pages — and markdown
+ * would otherwise show it as a rule plus a stray setext heading.
+ */
+export function stripFrontmatter(content: string): string {
+  if (!/^---\r?\n/.test(content)) return content;
+  const end = content.search(/\r?\n(---|\.\.\.)[ \t]*(\r?\n|$)/);
+  if (end === -1) return content;
+  const rest = content.slice(end + 1);
+  const newline = rest.indexOf("\n");
+  return newline === -1 ? "" : rest.slice(newline + 1);
+}
+
 export const MarkdownDoc = memo(function MarkdownDoc({
   content,
   slug = "",
@@ -104,6 +118,7 @@ export const MarkdownDoc = memo(function MarkdownDoc({
   resolveHref?: (href: string) => string | undefined;
 }) {
   const resolveLink = resolveHref ?? ((href: string) => resolveDocLink(slug, path, href, files));
+  const body = stripFrontmatter(content);
   const heading =
     (Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
     ({ children }: { children?: ReactNode }) => {
@@ -158,7 +173,7 @@ export const MarkdownDoc = memo(function MarkdownDoc({
     <article className="prose prose-sm max-w-none sm:prose-base">
       {/* GFM: tables, strikethrough, task lists — README/guide staples. */}
       <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
-        {content}
+        {body}
       </ReactMarkdown>
     </article>
   );

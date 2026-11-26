@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CSharpAdapter } from "@necronomidoc/adapter-csharp";
@@ -8,6 +8,7 @@ import { OpenApiAdapter } from "@necronomidoc/adapter-openapi";
 import { PythonAdapter } from "@necronomidoc/adapter-python";
 import { TypeScriptAdapter } from "@necronomidoc/adapter-ts";
 import {
+  ProductManifest,
   SCHEMA_VERSION,
   slugify,
   type AdapterConfig,
@@ -18,10 +19,13 @@ import {
 } from "@necronomidoc/docmodel";
 import {
   CORE_DOCS_SUBDIR,
+  PRODUCT_OVERRIDE_SUBDIR,
   buildCoreDocs,
+  buildProduct,
   buildSubsystems,
   computeEnrichmentReport,
   mergeEnrichment,
+  scanTestRefs,
 } from "@necronomidoc/enrichment";
 import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
 import { ensureDataDirVersion } from "./datadir.js";
@@ -49,7 +53,7 @@ export function listAdapters(): readonly DocAdapter[] {
 }
 
 /** Combine per-adapter models into one (first adapter wins on path clashes). */
-function combineModels(models: DocModel[]): DocModel {
+export function combineModels(models: DocModel[]): DocModel {
   const [base, ...rest] = models;
   const files = [...base!.files];
   const seen = new Set(files.map((f) => f.path));
@@ -200,10 +204,19 @@ export function publishModel(
     llmDir: serverEnrichmentDir,
   });
   const report = computeEnrichmentReport(merged);
+  const finalDir = paths.repoDir(dataDir, merged.repo.slug);
+  // Product docs (decision 0023): the previously published manifest is the
+  // code-binding drift baseline; tests are scanned only when a working tree
+  // exists (pre-extracted IR reports coverage as "not scanned").
+  const product = buildProduct(merged, {
+    overrideDir: join(serverEnrichmentDir, PRODUCT_OVERRIDE_SUBDIR),
+    llmDir: serverEnrichmentDir,
+    testRefs: repoDir ? scanTestRefs(repoDir) : undefined,
+    previous: readPublishedProduct(finalDir),
+  });
 
   const entry = registryEntryFor(merged, report);
-  const finalDir = paths.repoDir(dataDir, merged.repo.slug);
-  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report }, (tmpDir) => {
+  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report, product }, (tmpDir) => {
     // Source snapshots + version journal + per-version archive are staged into
     // the same tmp dir so the atomic swap publishes everything (or nothing)
     // together.
@@ -254,6 +267,19 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     return { model: merged, entry, adapter };
   } finally {
     cleanup?.();
+  }
+}
+
+/** The repo's currently published product manifest, if any (drift baseline). */
+function readPublishedProduct(repoDir: string): ProductManifest | undefined {
+  const file = paths.product(repoDir);
+  if (!existsSync(file)) return undefined;
+  try {
+    const parsed = ProductManifest.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    // A corrupt manifest only costs the baseline — bindings re-baseline now.
+    return undefined;
   }
 }
 

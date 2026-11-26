@@ -95,7 +95,7 @@ describe("automated ingestion end-to-end", () => {
     };
   };
 
-  it("builds docs from a signed push webhook, no manual step", async () => {
+  it("[SES-002.OUT-1] [STORY-002.REQ-1] builds docs from a signed push webhook, no manual step", async () => {
     const sha = git(srcDir, "rev-parse", "HEAD");
     const body = githubPush(srcUrl, "refs/heads/main", sha);
     const res = await post("/hooks/github", body, signed(body));
@@ -146,7 +146,7 @@ describe("automated ingestion end-to-end", () => {
     expect((await get("/data/repos/../clones/e2e-repo/package.json")).status).toBe(404); // no traversal
   });
 
-  it("rejects forged webhooks and leaves the queue untouched", async () => {
+  it("[SES-002.OUT-2] rejects forged webhooks and leaves the queue untouched", async () => {
     const body = githubPush(srcUrl, "refs/heads/main", "deadbeef");
     const res = await post("/hooks/github", body, {
       "content-type": "application/json",
@@ -182,7 +182,7 @@ describe("automated ingestion end-to-end", () => {
     expect(res.status).toBe(401);
   });
 
-  it("keeps serving the last good docs when a build fails, with detail behind the token", async () => {
+  it("[SES-002.OUT-3] [STORY-002.REQ-2] keeps serving the last good docs when a build fails, with detail behind the token", async () => {
     const before = readFileSync(join(dataDir, "repos", "e2e-repo", "docmodel.json"), "utf8");
 
     // Break the source: point the registry at a URL that cannot be fetched.

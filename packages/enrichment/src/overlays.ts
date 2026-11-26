@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { EnrichmentOverlay, type EnrichmentOverlay as Overlay } from "@necronomidoc/docmodel";
 
@@ -46,9 +46,11 @@ export function loadOverlays(dirs: string[]): Map<string, Overlay> {
   const byId = new Map<string, Overlay>();
   for (const dir of dirs) {
     for (const file of walk(dir, [".json", ".yaml", ".yml"])) {
-      // Subsystem definitions and core-doc caches share these dirs but are
+      // Subsystem definitions, core-doc and product caches, and the product
+      // override tree (`product/`, decision 0023) share these dirs but are
       // not per-target overlays.
-      if (/^(subsystems|coredocs)[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
+      if (/^(subsystems|coredocs|product)[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
+      if (relative(dir, file).split(sep)[0] === "product") continue;
       for (const overlay of parseOverlayFile(file)) {
         const existing = byId.get(overlay.targetId);
         const keep =

@@ -15,6 +15,7 @@ import {
   SubsystemsView,
 } from "./pages.js";
 import { HelpView } from "./help.js";
+import { ProductDocView, ProductView, StoryMapView, TraceabilityView } from "./product.js";
 import "./styles.css";
 
 // Static single-file exports can't rely on server-side SPA fallback, so they
@@ -37,6 +38,10 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/r/:slug/docs" element={<CoreDocView />} />
           <Route path="/r/:slug/docs/:kind" element={<CoreDocView />} />
           <Route path="/r/:slug/subsystems" element={<SubsystemsView />} />
+          <Route path="/r/:slug/product" element={<ProductView />} />
+          <Route path="/r/:slug/product/map" element={<StoryMapView />} />
+          <Route path="/r/:slug/product/trace" element={<TraceabilityView />} />
+          <Route path="/r/:slug/product/:id" element={<ProductDocView />} />
           <Route path="/r/:slug/f/*" element={<FileView />} />
         </Route>
       </Routes>

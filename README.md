@@ -32,6 +32,12 @@ choices; [docs/architecture.md](docs/architecture.md) explains the design.
 - **Publishes four core docs per repo** — overview, conventions, packages,
   architecture (with a diagram) — resolved by precedence: repo-shipped file >
   server-side override > LLM-generated > an always-present heuristic floor.
+- **Documents what the product is FOR** — personas, jobs-to-be-done, user
+  stories with Gherkin/EARS acceptance criteria, journey maps, and **intent
+  interaction sessions** (one user's intent followed end to end) in a
+  standard `docs/product/` format. Steps bind to real code (broken/changed
+  bindings flag drift), tests cite ids for traceability, and `necronomidoc
+  product lint` gates CI ([docs/product-docs.md](docs/product-docs.md)).
 - **Serves agents, not just browsers** — MCP tools with provenance and
   staleness on every answer, `llms.txt` per repo, generated
   **Agent Skills** (`necronomidoc skills`), and **artefact generation** that
@@ -71,6 +77,11 @@ node packages/cli/dist/index.js artefact release-notes.md --all --out filled.md
 
 # scaffold the documentation standard into a repo
 node packages/cli/dist/index.js init-docs ../widgets
+
+# product docs: personas, intents, interaction sessions, stories — linted in CI
+node packages/cli/dist/index.js product init ../widgets
+node packages/cli/dist/index.js product new session --title "Admin rotates an API key" --dir ../widgets
+node packages/cli/dist/index.js product lint ../widgets
 ```
 
 Full guide: [docs/usage.md](docs/usage.md).
@@ -99,10 +110,10 @@ MCP connects): [EC2](docs/deploy/ec2.md) ·
 | `packages/adapter-openapi` | OpenAPI 3.x spec extraction (validate + bundle, one `endpoint` symbol per operation) |
 | `packages/adapter-python` | Python extraction via pinned `griffe dump` (parsed docstrings, signatures; static analysis, out of process) |
 | `packages/adapter-csharp` | C#/.NET extraction via `docfx metadata` ManagedReference YAML (Roslyn-driven, out of process) |
-| `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps |
+| `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps, product docs (parse, validate, bind, trace, diagram) |
 | `packages/mcp` | Manifest builder + MCP tools over a stateless streamable-HTTP server |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API + auth + structured logs), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| enrich \| skills \| artefact \| init-docs \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
+| `packages/cli` | `necronomidoc build \| enrich \| skills \| artefact \| init-docs \| product \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search, the served `/help` documentation |
 
 ## Tests

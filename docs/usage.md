@@ -174,7 +174,8 @@ claude mcp add --transport http necronomidoc http://localhost:4319/mcp
 
 (Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
 tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
-`get_core_doc`, `get_subsystem_overview`, `list_files`. Every response carries
+`get_core_doc`, `get_subsystem_overview`, `get_product_overview`,
+`get_product_doc`, `find_intents_for_code`, `list_files`. Every response carries
 provenance and a `stale` flag; `get_core_doc` serves the repo's overview /
 conventions / packages / architecture documents (see
 [core-docs.md](core-docs.md)), and `get_subsystem_overview` serves curated
@@ -244,7 +245,8 @@ Re-runs are free on unchanged code (content-hash cache), human overlays are
 never touched, and `--max-files` / `--max-tokens` cap every run. The same run
 generates any [core docs](core-docs.md) the repo hasn't curated
 (`--no-core-docs` opts out). Add `--subsystems` to have the model propose a
-reviewed subsystem map, and `--review-stale` to list human overlays whose
+reviewed subsystem map, `--product` to draft [product docs](product-docs.md)
+for a repo that has none, and `--review-stale` to list human overlays whose
 code has changed. Full guide: [enrichment.md](enrichment.md).
 
 ## Generate agent skills from documented repos
@@ -293,6 +295,26 @@ serve humans and agents alike. Scaffold it into any repo:
 node packages/cli/dist/index.js init-docs ../widgets   # never overwrites; --force does
 node packages/cli/dist/index.js doctor                 # advisory compliance findings
 ```
+
+## Document what the product is for
+
+[Product docs](product-docs.md) live in each repo's `docs/product/`:
+personas, jobs-to-be-done (intents), **intent interaction sessions** (one
+intent followed end to end), journeys, epics and user stories with Gherkin /
+EARS acceptance criteria. Session steps bind to code, tests cite ids, and the
+linter checks everything against both:
+
+```bash
+node packages/cli/dist/index.js product init ../widgets          # scaffold docs/product/ + templates + schema.json
+node packages/cli/dist/index.js product new persona --title "Platform engineer" --dir ../widgets
+node packages/cli/dist/index.js product new session --title "Engineer rotates a key" --dir ../widgets
+node packages/cli/dist/index.js product lint ../widgets          # exit 1 on errors; --strict, --json
+node packages/cli/dist/index.js enrich widgets --product          # LLM-draft a set when none exists…
+node packages/cli/dist/index.js product export widgets --out ../widgets/docs/product   # …then promote it
+```
+
+The site shows them under **Product** (intent map, story map, traceability,
+one page per document with flow/sequence/emotion diagrams).
 
 ## Add human enrichment overlays
 

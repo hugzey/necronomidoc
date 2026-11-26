@@ -41,7 +41,13 @@ export const VERSIONS_KEEP = 50;
 export const ARCHIVE_KEEP = 10;
 
 /** Per-version manifests copied into the archive (small; the bulk is sources/). */
-const ARCHIVED_MANIFESTS = ["docmodel.json", "coredocs.json", "subsystems.json", "sources.json"];
+const ARCHIVED_MANIFESTS = [
+  "docmodel.json",
+  "coredocs.json",
+  "subsystems.json",
+  "sources.json",
+  "product.json",
+];
 
 /**
  * Hash of the published documentation state: the merged files (facts +

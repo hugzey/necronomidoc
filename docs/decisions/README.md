@@ -26,6 +26,7 @@ Architectural and directional decisions for the documentation server project. On
 | [0020](0020-source-viewer.md) | Source viewer: build-time source snapshots + built-in highlighter, split-view UI | Accepted |
 | [0021](0021-doc-version-journal.md) | Documentation versioning: per-repo state journal + metadata info drawer | Accepted |
 | [0022](0022-subsystem-modeling.md) | Subsystem modeling: import-graph clustering floor, id-referencing two-way links, repo overview + generated architecture diagram | Accepted |
+| [0023](0023-product-docs-intent-sessions.md) | Product docs: personas, jobs, intent interaction sessions and stories in `docs/product/`, verified against code (bindings + drift) and tests (id citations) | Accepted |
 
 Some decisions cite pre-implementation research notes or numbered delivery
 plans ("slices"). Those documents were removed from the tree once the project

@@ -114,6 +114,14 @@ misplaced code.
 Everything is optional, plain markdown/YAML, and versioned with the code —
 documentation changes ride the same PRs as the code they describe.
 
+### Product documentation
+
+What the product is *for* — personas, jobs-to-be-done, intent interaction
+sessions, journeys and user stories with Gherkin/EARS criteria — has its own
+standard in the repo's `docs/product/`: [product-docs.md](product-docs.md)
+(`necronomidoc product init` scaffolds it, `product lint` checks it against
+the code and tests).
+
 ### Everything else
 
 - **README.md** stays the human front door (install, quick start, badges) —
