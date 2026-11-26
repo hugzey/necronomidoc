@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { DocModel, exportJsonSchemas, slugify } from "@necronomidoc/docmodel";
 import {
   buildRepo,
@@ -19,6 +19,20 @@ import {
   importSkillResults,
   initProductDocs,
   lintProduct,
+  listProposals,
+  ManifestStore,
+  aggregateMisses,
+  contentTerms,
+  findDuplicates,
+  missLogPath,
+  readMisses,
+  readProposal,
+  reviewProposal,
+  sessionCheckSkeleton,
+  mergeSynonymsFile,
+  BUILTIN_SKILL_ID,
+  builtinSkillMd,
+  mcpConnectCommand,
   newProductDoc,
   readPublishedProductManifest,
   KNOWN_PROVIDERS,
@@ -82,6 +96,7 @@ Usage:
                  [--subsystems] [--product] [--no-core-docs] [--review-stale]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
                  [--name <n>] [--ref <ref>] [--data-dir <dir>]
+  necronomidoc skills --builtin [--out <skills-dir>] [--mcp-url <url>] [--auth]
   necronomidoc skills [<repo-slug> | --repos <a,b,c> | --all] [--out <dir>] [--force]
                  [--dry-run] [--provider <p>] [--model <id>] [--base-url <url>]
                  [--export-tasks <tasks.json>] [--import-results <results.json> --tasks <tasks.json>]
@@ -96,6 +111,11 @@ Usage:
   necronomidoc product new <persona|job|epic|story|journey|session> --title "<title>" [--dir <repo-path>]
   necronomidoc product lint [<repo-path>] [--strict] [--json]
   necronomidoc product export <repo-id> [--out <dir>] [--force] [--data-dir <dir>]
+  necronomidoc product checks [<repo-path>] [--out <dir>] [--session <SES-id>] [--force] [--print]
+  necronomidoc proposals list [--repo <slug>] [--status proposed|accepted|rejected] [--json] [--data-dir <dir>]
+  necronomidoc proposals show <id> [--data-dir <dir>]
+  necronomidoc proposals accept|reject <id> [--note "<why>"] [--data-dir <dir>]
+  necronomidoc misses [--repo <slug>] [--limit <n>] [--suggest] [--write] [--json] [--data-dir <dir>]
   necronomidoc serve [--port <p>] [--data-dir <dir>] [--site-dir <dir>] [--token <t>] [--auth]
   necronomidoc repo add <url-or-path> [--id <slug>] [--provider github|ado|generic]
                  [--branch <b>] [--name <n>] [--secret-env <VAR>] [--token-env <VAR>]
@@ -109,7 +129,7 @@ Usage:
 
 Env: DOCS_DATA_DIR, PORT, DOCS_TOKEN, SITE_DIR, DOCS_WEBHOOK_SECRET,
      DOCS_DEBOUNCE_MS, DOCS_BUILD_CONCURRENCY, DOCS_BUILD_TIMEOUT_MS,
-     DOCS_AUTH_REQUIRED, DOCS_SESSION_SECRET, DOCS_LOG_FORMAT
+     DOCS_AUTH_REQUIRED, DOCS_SESSION_SECRET, DOCS_LOG_FORMAT, DOCS_MISS_LOG
 
 Enrich LLM providers (--provider ${LLM_PROVIDERS.join(" | ")}, auto-detected from keys):
      ANTHROPIC_API_KEY | OPENAI_API_KEY | OPENROUTER_API_KEY | AZURE_OPENAI_API_KEY
@@ -338,6 +358,23 @@ function scopeFrom(flags: Flags, positionalIndex: number): ScopeSelection {
 }
 
 async function cmdSkills(flags: Flags): Promise<number> {
+  // The built-in `using-necronomidoc` skill: no LLM, no built repo needed.
+  if (flags["builtin"] === true) {
+    const options = { mcpUrl: str(flags, "mcp-url"), authRequired: flags["auth"] === true };
+    const md = builtinSkillMd(options);
+    const out = str(flags, "out");
+    if (!out) {
+      process.stdout.write(md);
+      return 0;
+    }
+    const file = join(resolve(out), BUILTIN_SKILL_ID, "SKILL.md");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, md);
+    console.log(`✓ wrote ${file}`);
+    if (!options.mcpUrl) console.log("  tip: pass --mcp-url https://<your-docs-server>/mcp to fill in your server's address");
+    console.log(`  connect the MCP server too:\n  ${mcpConnectCommand(options).replace(/\n/g, "\n  ")}`);
+    return 0;
+  }
   const config = loadConfig({ dataDir: str(flags, "data-dir") });
 
   // Agent mode, step 2: validate + persist the agent's skill set.
@@ -587,10 +624,141 @@ async function cmdProduct(flags: Flags): Promise<number> {
       console.log("Review, set status: accepted where true, commit — curated docs replace the drafts.");
       return 0;
     }
+    case "checks": {
+      // Executable session-check skeletons (decision 0024), one file per session.
+      const root = resolve(arg ?? ".");
+      const manifest = await lintProduct(root);
+      const want = str(flags, "session")?.toUpperCase();
+      const sessions = manifest.docs.filter(
+        (d): d is Extract<typeof d, { type: "session" }> => d.type === "session" && (!want || d.id === want),
+      );
+      if (sessions.length === 0) {
+        console.error(want ? `product checks: no session ${want}` : "product checks: no sessions documented");
+        return 1;
+      }
+      const outDir = str(flags, "out");
+      for (const session of sessions) {
+        const file = sessionCheckSkeleton(session);
+        if (flags["print"] === true) {
+          console.log(`// ---- ${file.path} ----\n${file.content}`);
+          continue;
+        }
+        const target = outDir ? join(resolve(outDir), file.path.split("/").pop()!) : join(root, file.path);
+        if (existsSync(target) && flags["force"] !== true) {
+          console.log(`  = ${target} (exists — kept; --force overwrites)`);
+          continue;
+        }
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, file.content);
+        console.log(`  + ${target} [${file.framework}] ${file.outcomes.join(", ")}`);
+      }
+      if (flags["print"] !== true) {
+        console.log("Fill every TODO(check), then drop .fixme/.skip — implemented checks count as outcome coverage.");
+      }
+      return 0;
+    }
     default:
-      console.error("product: one of init | new | lint | export");
+      console.error("product: one of init | new | lint | export | checks");
       return 1;
   }
+}
+
+/** `necronomidoc proposals …` — review agent-written doc drafts (decision 0024). */
+function cmdProposals(flags: Flags): number {
+  const [, action, id] = flags._ as string[];
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+  switch (action) {
+    case "list":
+    case undefined: {
+      const list = listProposals(config.dataDir, { repo: str(flags, "repo"), status: str(flags, "status") ?? (action ? undefined : "proposed") });
+      if (flags["json"] === true) {
+        console.log(JSON.stringify(list, null, 2));
+        return 0;
+      }
+      if (list.length === 0) console.log("No proposals.");
+      for (const p of list) {
+        const target = p.overlay?.targetId ?? p.productDoc?.path ?? "?";
+        const warns = p.findings.filter((f) => f.level !== "info").length;
+        console.log(`${p.id}  [${p.status}] ${p.kind} ${target}${p.author ? ` — by ${p.author}` : ""}${warns ? ` (${warns} finding(s))` : ""}`);
+        if (p.rationale) console.log(`    why: ${p.rationale.split("\n")[0]}`);
+      }
+      return 0;
+    }
+    case "show": {
+      const p = id ? readProposal(config.dataDir, id) : undefined;
+      if (!p) {
+        console.error(`proposals show: no proposal "${id ?? ""}"`);
+        return 1;
+      }
+      console.log(JSON.stringify(p, null, 2));
+      return 0;
+    }
+    case "accept":
+    case "reject": {
+      if (!id) {
+        console.error(`proposals ${action}: missing <id>`);
+        return 1;
+      }
+      const reviewed = reviewProposal(config.dataDir, id, action, { note: str(flags, "note") });
+      console.log(`✓ ${reviewed.id} ${reviewed.status}${reviewed.writtenTo ? ` → ${reviewed.writtenTo}` : ""}`);
+      if (reviewed.status === "accepted") console.log(`  publishes on the next build of "${reviewed.repo}" (push, or necronomidoc build …).`);
+      for (const f of reviewed.findings.filter((x) => x.code === "repo-shipped")) console.log(`  ℹ ${f.message}`);
+      return 0;
+    }
+    default:
+      console.error("proposals: one of list | show | accept | reject");
+      return 1;
+  }
+}
+
+/** `necronomidoc misses` — what agents asked for that the docs couldn't answer (decision 0024). */
+function cmdMisses(flags: Flags): number {
+  const config = loadConfig({ dataDir: str(flags, "data-dir") });
+  const repo = str(flags, "repo");
+  const limit = Number.parseInt(str(flags, "limit") ?? "25", 10) || 25;
+  const concepts = aggregateMisses(readMisses(missLogPath(config.dataDir)), repo, limit);
+  const suggest = flags["suggest"] === true || flags["write"] === true;
+  let store: InstanceType<typeof ManifestStore> | undefined;
+  if (suggest) {
+    store = new ManifestStore(config.dataDir);
+    store.reload();
+  }
+  // Candidate synonyms: the miss's key terms → the closest existing symbol name.
+  const suggestions: Record<string, string[]> = {};
+  const rows = concepts.map((c) => {
+    let candidate: string | undefined;
+    if (store && !c.hashed) {
+      const term = contentTerms(c.query).join(" ");
+      const hit = findDuplicates(store, { repo, name: term, purpose: c.query }, 1)[0];
+      if (hit && term) {
+        candidate = hit.name;
+        suggestions[term] = [...new Set([...(suggestions[term] ?? []), hit.name])];
+      }
+    }
+    return { ...c, candidate };
+  });
+  if (flags["json"] === true) {
+    console.log(JSON.stringify({ mode: config.missLog, undocumented: rows, ...(suggest ? { synonyms: suggestions } : {}) }, null, 2));
+  } else {
+    if (rows.length === 0) console.log(`No misses recorded${repo ? ` for ${repo}` : ""} (miss log mode: ${config.missLog}).`);
+    for (const r of rows) {
+      console.log(`${String(r.count).padStart(4)}×  ${r.hashed ? `#${r.query} (hashed)` : `"${r.query}"`}  [${r.tools.join(", ")}]${r.candidate ? `  → maybe ${r.candidate}` : ""}`);
+    }
+    if (suggest && Object.keys(suggestions).length > 0) {
+      console.log("\nCandidate synonyms (synonyms.yaml):");
+      for (const [term, names] of Object.entries(suggestions)) console.log(`${term}: [${names.join(", ")}]`);
+    }
+  }
+  if (flags["write"] === true) {
+    if (!repo) {
+      console.error("misses --write: needs --repo <slug> (synonyms are per repo)");
+      return 1;
+    }
+    if (Object.keys(suggestions).length === 0) return 0;
+    const { file, added } = mergeSynonymsFile(join(config.dataDir, "enrichment", slugify(repo)), suggestions);
+    console.log(`✓ added ${added} synonym(s) to ${file} — review it; applies on the next build of ${repo}.`);
+  }
+  return 0;
 }
 
 function cmdServe(flags: Flags): number {
@@ -871,6 +1039,10 @@ async function main(): Promise<number> {
       return cmdInitDocs(flags);
     case "product":
       return cmdProduct(flags);
+    case "proposals":
+      return cmdProposals(flags);
+    case "misses":
+      return cmdMisses(flags);
     case "serve":
       return cmdServe(flags);
     case "repo":

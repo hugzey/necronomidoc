@@ -46,10 +46,11 @@ export function loadOverlays(dirs: string[]): Map<string, Overlay> {
   const byId = new Map<string, Overlay>();
   for (const dir of dirs) {
     for (const file of walk(dir, [".json", ".yaml", ".yml"])) {
-      // Subsystem definitions, core-doc and product caches, and the product
-      // override tree (`product/`, decision 0023) share these dirs but are
-      // not per-target overlays.
-      if (/^(subsystems|coredocs|product)[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
+      // Subsystem definitions, core-doc and product caches, curated recipes
+      // and search synonyms (decision 0024), and the product override tree
+      // (`product/`, decision 0023) share these dirs but are not per-target
+      // overlays.
+      if (/^(subsystems|coredocs|product|recipes|synonyms)[.-]/.test(file.split(/[\\/]/).pop() ?? "")) continue;
       if (relative(dir, file).split(sep)[0] === "product") continue;
       for (const overlay of parseOverlayFile(file)) {
         const existing = byId.get(overlay.targetId);

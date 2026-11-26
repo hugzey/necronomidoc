@@ -119,8 +119,11 @@ const SKILLS_SYSTEM_PROMPT = [
   "self-contained markdown playbook: concrete steps, real file paths and",
   "module names from the provided documentation, conventions to follow, and",
   "pitfalls to avoid. Where live documentation would help, tell the agent to",
-  "query the necronomidoc MCP tools (search_docs, get_core_doc, get_file_doc,",
-  "get_subsystem_overview, list_files). Ground every claim strictly in the",
+  "use the necronomidoc MCP tools: start a task with get_context_for_task,",
+  "call is_this_a_duplicate before writing new code, look things up with",
+  "search_docs / get_function_doc / get_recipes / get_subsystem_overview,",
+  "and gate the diff with check_change (run its testsToRun) before",
+  "committing. Ground every claim strictly in the",
   "provided context — never invent files, commands, or behavior. Respond with",
   "JSON only, matching the schema.",
 ].join(" ");

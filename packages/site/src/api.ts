@@ -238,6 +238,27 @@ export async function fetchSkillSet(id: string): Promise<SkillSet> {
   return (await res.json()) as SkillSet;
 }
 
+/** The built-in `using-necronomidoc` skill, with this server's MCP URL filled in. */
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  /** The full SKILL.md file (frontmatter + body). */
+  skillMd: string;
+  mcpUrl?: string;
+  connectCommand: string;
+  installPath: string;
+}
+
+/** Server-only (undefined in a static export, like skill sets). */
+export async function fetchAgentSkill(): Promise<AgentSkill | undefined> {
+  if (injectedData()) return undefined;
+  const res = await fetch("/api/agent-skill");
+  if (!res.ok) throw new Error(`${res.status} fetching /api/agent-skill`);
+  return (await res.json()) as AgentSkill;
+}
+
 /** Generated artefacts — same server-only, uncached contract as skill sets. */
 export async function fetchArtefacts(): Promise<ArtefactIndex | undefined> {
   if (injectedData()) return undefined;

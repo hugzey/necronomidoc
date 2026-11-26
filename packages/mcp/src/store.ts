@@ -1,18 +1,66 @@
 import { existsSync, readFileSync } from "node:fs";
 import type MiniSearch from "minisearch";
+import { join } from "node:path";
 import {
+  AgentManifest,
   CoreDocsManifest,
   DocModel,
   ProductManifest,
   SubsystemsManifest,
+  VersionsManifest,
   fileIdOfSymbol,
+  type CodeBinding,
   type DocFile,
   type DocSymbolShape,
   type RegistryEntry,
   type SearchDoc,
+  type Subsystem,
 } from "@necronomidoc/docmodel";
 import { paths, readRegistry } from "./manifests.js";
 import { loadIndex } from "./search.js";
+import { trustScore, type Trust } from "./trust.js";
+
+/** Read + validate one optional JSON manifest; undefined when absent or invalid. */
+function readOptional<T>(file: string, schema: { safeParse(v: unknown): { success: true; data: T } | { success: false } }): T | undefined {
+  if (!existsSync(file)) return undefined;
+  try {
+    const parsed = schema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A past published state, loaded from the per-version archive (decision 0021). */
+export interface ArchivedState {
+  version: number;
+  model: DocModel;
+  product?: ProductManifest;
+  subsystems?: SubsystemsManifest;
+}
+
+/** Resolve a relative import to a file path in `known` (mirrors the build-time resolver). */
+function resolveRelative(fromPath: string, specifier: string, known: Map<string, DocFile>): string | undefined {
+  if (!specifier.startsWith(".")) return undefined;
+  const dir = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
+  const out: string[] = [];
+  for (const seg of `${dir}/${specifier}`.split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  const base = out.join("/");
+  const exts = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py"];
+  const candidates = [
+    base,
+    ...exts.map((e) => `${base}${e}`),
+    ...exts.map((e) => `${base}/index${e}`),
+    `${base}/__init__.py`,
+    base.replace(/\.jsx?$/, ".ts"),
+    base.replace(/\.jsx?$/, ".tsx"),
+  ];
+  return candidates.find((c) => known.has(c));
+}
 
 interface LoadedRepo {
   entry: RegistryEntry;
@@ -21,10 +69,20 @@ interface LoadedRepo {
   subsystems?: SubsystemsManifest;
   coreDocs?: CoreDocsManifest;
   product?: ProductManifest;
+  agent?: AgentManifest;
+  versions?: VersionsManifest;
   /** file id -> file, symbol id -> symbol, for O(1) lookups. */
   filesById: Map<string, DocFile>;
   filesByPath: Map<string, DocFile>;
   symbolsById: Map<string, DocSymbolShape>;
+  /** path -> files importing it (reverse import graph). */
+  importersOf: Map<string, Set<string>>;
+  /** path -> files it imports (internal, resolved). */
+  importsOf: Map<string, Set<string>>;
+  /** path -> test files exercising it (from agent.json test bindings). */
+  testsByPath: Map<string, Set<string>>;
+  /** path -> product-doc code bindings that target it (or a dir containing it). */
+  bindingsByPath: Map<string, CodeBinding[]>;
 }
 
 export interface SearchHit {
@@ -36,6 +94,8 @@ export interface SearchHit {
   kind?: string;
   summary?: string;
   score: number;
+  /** Query terms that matched this hit (after fuzzy/prefix expansion). */
+  matchedTerms: string[];
 }
 
 /**
@@ -59,28 +119,11 @@ export class ManifestStore {
         if (!existsSync(modelPath) || !existsSync(indexPath)) continue;
         const model = DocModel.parse(JSON.parse(readFileSync(modelPath, "utf8")));
         const index = loadIndex(readFileSync(indexPath, "utf8"));
-        const subsystemsPath = paths.subsystems(repoDir);
-        let subsystems: SubsystemsManifest | undefined;
-        if (existsSync(subsystemsPath)) {
-          const parsed = SubsystemsManifest.safeParse(
-            JSON.parse(readFileSync(subsystemsPath, "utf8")),
-          );
-          if (parsed.success) subsystems = parsed.data;
-        }
-        const coreDocsPath = paths.coreDocs(repoDir);
-        let coreDocs: CoreDocsManifest | undefined;
-        if (existsSync(coreDocsPath)) {
-          const parsed = CoreDocsManifest.safeParse(
-            JSON.parse(readFileSync(coreDocsPath, "utf8")),
-          );
-          if (parsed.success) coreDocs = parsed.data;
-        }
-        const productPath = paths.product(repoDir);
-        let product: ProductManifest | undefined;
-        if (existsSync(productPath)) {
-          const parsed = ProductManifest.safeParse(JSON.parse(readFileSync(productPath, "utf8")));
-          if (parsed.success) product = parsed.data;
-        }
+        const subsystems = readOptional(paths.subsystems(repoDir), SubsystemsManifest);
+        const coreDocs = readOptional(paths.coreDocs(repoDir), CoreDocsManifest);
+        const product = readOptional(paths.product(repoDir), ProductManifest);
+        const agent = readOptional(paths.agent(repoDir), AgentManifest);
+        const versions = readOptional(paths.versions(repoDir), VersionsManifest);
         const filesById = new Map<string, DocFile>();
         const filesByPath = new Map<string, DocFile>();
         const symbolsById = new Map<string, DocSymbolShape>();
@@ -95,6 +138,41 @@ export class ManifestStore {
           };
           walk(file.symbols);
         }
+        const importersOf = new Map<string, Set<string>>();
+        const importsOf = new Map<string, Set<string>>();
+        for (const file of model.files) {
+          const out = new Set<string>();
+          for (const imp of file.imports) {
+            const target = resolveRelative(file.path, imp.moduleSpecifier, filesByPath);
+            if (!target || target === file.path) continue;
+            out.add(target);
+            const set = importersOf.get(target) ?? new Set<string>();
+            set.add(file.path);
+            importersOf.set(target, set);
+          }
+          importsOf.set(file.path, out);
+        }
+        const testsByPath = new Map<string, Set<string>>();
+        for (const test of agent?.tests ?? []) {
+          for (const path of test.exercises) {
+            const set = testsByPath.get(path) ?? new Set<string>();
+            set.add(test.path);
+            testsByPath.set(path, set);
+          }
+        }
+        const bindingsByPath = new Map<string, CodeBinding[]>();
+        for (const doc of product?.docs ?? []) {
+          for (const b of doc.bindings) {
+            const t = b.target;
+            if (!t) continue;
+            const hits = t.kind === "dir" ? [...filesByPath.keys()].filter((p) => p.startsWith(`${t.path}/`)) : [t.path];
+            for (const path of hits) {
+              const list = bindingsByPath.get(path) ?? [];
+              list.push(b);
+              bindingsByPath.set(path, list);
+            }
+          }
+        }
         next.set(entry.slug, {
           entry,
           model,
@@ -102,14 +180,23 @@ export class ManifestStore {
           subsystems,
           coreDocs,
           product,
+          agent,
+          versions,
           filesById,
           filesByPath,
           symbolsById,
+          importersOf,
+          importsOf,
+          testsByPath,
+          bindingsByPath,
         });
       }
     }
     this.repos = next;
+    this.archiveCache.clear();
   }
+
+  private archiveCache = new Map<string, ArchivedState>();
 
   listRepos(): RegistryEntry[] {
     return [...this.repos.values()].map((r) => r.entry);
@@ -134,6 +221,7 @@ export class ManifestStore {
           kind: r.kind,
           summary: r.summary,
           score: r.score,
+          matchedTerms: (r.queryTerms as string[] | undefined) ?? [],
         });
       }
     }
@@ -192,5 +280,116 @@ export class ManifestStore {
   /** The repo's resolved core docs manifest, if it was published. */
   getCoreDocs(slug: string): CoreDocsManifest | undefined {
     return this.repos.get(slug)?.coreDocs;
+  }
+
+  /** The repo's agent manifest (recipes, usages, test bindings, synonyms), if published. */
+  getAgent(slug: string): AgentManifest | undefined {
+    return this.repos.get(slug)?.agent;
+  }
+
+  /** The repo's documentation version journal, newest first. */
+  getVersions(slug: string): VersionsManifest | undefined {
+    return this.repos.get(slug)?.versions;
+  }
+
+  /**
+   * Load an archived past version (doc model + product + subsystems). Disk
+   * read on demand — the one MCP path that touches disk — cached per
+   * (repo, version) until the next reload.
+   */
+  loadArchive(slug: string, version: number): ArchivedState | undefined {
+    const key = `${slug}@${version}`;
+    const cached = this.archiveCache.get(key);
+    if (cached) return cached;
+    const dir = paths.versionArchiveDir(paths.repoDir(this.dataDir, slug), version);
+    const model = readOptional(join(dir, "docmodel.json"), DocModel);
+    if (!model) return undefined;
+    const state: ArchivedState = {
+      version,
+      model,
+      product: readOptional(join(dir, "product.json"), ProductManifest),
+      subsystems: readOptional(join(dir, "subsystems.json"), SubsystemsManifest),
+    };
+    if (this.archiveCache.size >= 4) this.archiveCache.delete(this.archiveCache.keys().next().value!);
+    this.archiveCache.set(key, state);
+    return state;
+  }
+
+  /** Resolve a relative import written in `from` to a documented file path. */
+  resolveImport(slug: string, from: string, specifier: string): string | undefined {
+    const repo = this.repos.get(slug);
+    return repo ? resolveRelative(from, specifier, repo.filesByPath) : undefined;
+  }
+
+  /** Files that import `path` (reverse import graph). */
+  importersOf(slug: string, path: string): string[] {
+    return [...(this.repos.get(slug)?.importersOf.get(path) ?? [])].sort();
+  }
+
+  /** Internal files `path` imports. */
+  importsOf(slug: string, path: string): string[] {
+    return [...(this.repos.get(slug)?.importsOf.get(path) ?? [])].sort();
+  }
+
+  /** Test files whose imports exercise `path` directly. */
+  testsFor(slug: string, path: string): string[] {
+    return [...(this.repos.get(slug)?.testsByPath.get(path) ?? [])].sort();
+  }
+
+  /** Product-doc code bindings targeting `path` (optionally one symbol in it). */
+  bindingsFor(slug: string, path: string, symbol?: string): CodeBinding[] {
+    const all = this.repos.get(slug)?.bindingsByPath.get(path) ?? [];
+    if (!symbol) return all;
+    return all.filter((b) => b.target?.kind !== "symbol" || b.target.name === symbol || b.target.name?.startsWith(`${symbol}.`));
+  }
+
+  /** The subsystem owning `path` (longest matching dir; dir-less ones own root files). */
+  subsystemOf(slug: string, path: string): Subsystem | undefined {
+    const map = this.repos.get(slug)?.subsystems;
+    if (!map) return undefined;
+    let best: { s: Subsystem; len: number } | undefined;
+    for (const s of map.subsystems) {
+      if (s.dirs.length === 0) {
+        if (!path.includes("/") && !best) best = { s, len: 0 };
+        continue;
+      }
+      for (const d of s.dirs) {
+        const dir = d.replace(/\/+$/, "");
+        if ((path === dir || path.startsWith(`${dir}/`)) && (!best || dir.length > best.len)) best = { s, len: dir.length };
+      }
+    }
+    return best?.s;
+  }
+
+  /**
+   * One trust score for an answer about a file or symbol (decision 0024):
+   * provenance × staleness × binding drift × test coverage.
+   */
+  trustFor(slug: string, path: string, symbol?: DocSymbolShape): Trust {
+    const file = this.getFile(slug, path);
+    const enrichment = symbol?.enrichment ?? file?.enrichment;
+    const bindings = this.bindingsFor(slug, path, symbol?.name.split(".")[0]);
+    const directTests = this.testsFor(slug, path);
+    const cited = bindings.length > 0 && this.getProduct(slug)?.docs.some((d) => d.tests.length > 0 && d.bindings.some((b) => bindings.includes(b)));
+    return trustScore({
+      provenance: enrichment?.provenance,
+      stale: enrichment?.stale,
+      documented: Boolean(symbol?.doc?.summary ?? file?.moduleDoc?.summary),
+      bindings: bindings.map((b) => b.state),
+      tested: directTests.length > 0 || cited === true,
+    });
+  }
+
+  /**
+   * Gotchas/invariants that apply to a file or symbol: the symbol's own, its
+   * file's, and its subsystem's (prefixed with the subsystem name).
+   */
+  invariantsFor(slug: string, path: string, symbol?: DocSymbolShape): string[] {
+    const out: string[] = [];
+    for (const text of symbol?.enrichment?.invariants ?? []) out.push(text);
+    for (const text of this.getFile(slug, path)?.enrichment?.invariants ?? []) out.push(text);
+    const sub = this.subsystemOf(slug, path);
+    for (const text of sub?.invariants ?? []) out.push(`(${sub!.name}) ${text}`);
+    return [...new Set(out)];
   }
 }

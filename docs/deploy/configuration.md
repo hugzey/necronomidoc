@@ -14,6 +14,7 @@ Configuration is resolved in precedence order: **defaults → `necronomidoc.conf
 | `DOCS_DEBOUNCE_MS` | `debounceMs` | `10000` | Debounce window for coalescing rapid pushes into one build. |
 | `DOCS_BUILD_CONCURRENCY` | `buildConcurrency` | `1` | Max concurrent builds. |
 | `DOCS_BUILD_TIMEOUT_MS` | `buildTimeoutMs` | `600000` | Per-build timeout. |
+| `DOCS_MISS_LOG` | `missLog` | `full` | MCP [miss log](../agent-tools.md#learning-from-misses) privacy mode: `full` records the text of queries that found nothing useful, `hashed` only a hash (repeats still aggregate), `off` nothing. Written to `data/telemetry/` (never served). |
 | `DOCS_LOG_FORMAT` | `logFormat` | `json` | `json` emits one structured line per event (for `docker logs`, journald, log shippers); `text` is human-readable for local dev. |
 | `NECRONOMIDOC_LLM_PROVIDER` | — | *(auto-detect)* | LLM provider for `enrich`: `anthropic`, `openai`, `openrouter`, `azure`, `ollama`, or `bedrock`. Unset = auto-detect from which key below is present (ambiguity is an error, Bedrock is never auto-detected). See the [enrichment guide](../enrichment.md#choosing-a-provider). |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` / `AZURE_OPENAI_API_KEY` | — | *(empty)* | Provider credential for `enrich`. Bedrock uses the standard AWS credential chain (`AWS_REGION`, profiles, IAM roles) instead. No key at all? Use `enrich --export-tasks` + a local coding agent + `--import-results`. |

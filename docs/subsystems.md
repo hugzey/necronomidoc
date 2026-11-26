@@ -22,6 +22,7 @@ MCP tool, indexed by `search_docs`, and folded into `llms.txt`.
 | `entryPoints` | The files/symbols you start reading from. Linked to their file pages. |
 | `dirs` | Directory prefixes whose files belong to this subsystem. |
 | `related` | Directed relationships to other subsystems (see below). |
+| `invariants` | One-line constraints every change inside it must keep true ("IDs are stable across builds"). Surfaced in every MCP answer touching its files; `notOwns` statements also drive [`check_change`](agent-tools.md#the-pre-commit-gate-check_change) boundary checks. |
 
 Two repo-level fields sit alongside the list:
 

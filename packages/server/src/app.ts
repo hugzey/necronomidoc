@@ -2,8 +2,10 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { Hono, type Context } from "hono";
 import { DocModel, slugify, type IngestStatusResponse } from "@necronomidoc/docmodel";
-import { ManifestStore, handleMcpRequest } from "@necronomidoc/mcp";
-import { LlmConfigError } from "@necronomidoc/enrichment";
+import { ManifestStore, MissLog, aggregateMisses, handleMcpRequest, missLogPath, readMisses } from "@necronomidoc/mcp";
+import { ProposalStore, listProposals, readProposal, reviewProposal } from "./proposals.js";
+import JSZip from "jszip";
+import { BUILTIN_SKILL_ID, LlmConfigError, builtinSkill, builtinSkillMd, mcpConnectCommand } from "@necronomidoc/enrichment";
 import { artefactFilePath, generateArtefact, readArtefactIndex, readArtefactRecord } from "./artefacts.js";
 import { installAuth } from "./auth.js";
 import { buildRepo, looksLikeGitUrl, publishModel } from "./build.js";
@@ -134,6 +136,10 @@ export function createApp(config: NecronomidocConfig): App {
   const log = createLogger({ format: config.logFormat });
   const store = new ManifestStore(config.dataDir);
   store.reload();
+  // Agent feedback loops (decision 0024): misses are logged per the privacy
+  // mode; doc write-back exists only when an admin token is configured.
+  const missLog = new MissLog(missLogPath(config.dataDir), config.missLog);
+  const proposals = config.token ? new ProposalStore(config.dataDir, store) : undefined;
 
   // The full pipeline for one registered repo: fetch → extract → enrich →
   // atomic publish. Only successful builds publish, so a failure leaves the
@@ -438,6 +444,44 @@ export function createApp(config: NecronomidocConfig): App {
     readArtefactIndex(config.dataDir),
   );
 
+  // The built-in `using-necronomidoc` skill (decision 0024): a fixed playbook
+  // for working with this server, with this instance's MCP URL filled in.
+  // Behind a reverse proxy the forwarded host/proto name the public origin.
+  const builtinOptions = (c: Context) => {
+    const url = new URL(c.req.url);
+    const host = c.req.header("x-forwarded-host")?.split(",")[0]?.trim() || url.host;
+    const proto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim() || url.protocol.replace(/:$/, "");
+    const safe = /^[A-Za-z0-9.-]+(:\d+)?$/.test(host) && /^https?$/.test(proto);
+    return { mcpUrl: safe ? `${proto}://${host}/mcp` : undefined, authRequired: config.authRequired };
+  };
+  app.get("/api/agent-skill", (c) => {
+    const options = builtinOptions(c);
+    const skill = builtinSkill(options);
+    return c.json({
+      ...skill,
+      skillMd: builtinSkillMd(options),
+      mcpUrl: options.mcpUrl,
+      connectCommand: mcpConnectCommand(options),
+      installPath: `~/.claude/skills/${BUILTIN_SKILL_ID}/SKILL.md`,
+    });
+  });
+  app.get("/api/agent-skill/SKILL.md", (c) =>
+    new Response(builtinSkillMd(builtinOptions(c)), {
+      headers: { "content-type": "text/markdown; charset=utf-8" },
+    }),
+  );
+  app.get("/api/agent-skill/download", async (c) => {
+    const zip = new JSZip();
+    zip.file(`${BUILTIN_SKILL_ID}/SKILL.md`, builtinSkillMd(builtinOptions(c)));
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+    return new Response(bytes, {
+      headers: {
+        "content-type": "application/zip",
+        "content-disposition": `attachment; filename="${BUILTIN_SKILL_ID}.zip"`,
+      },
+    });
+  });
+
   app.get("/api/skills", (c) => c.json(cachedSkillIndex()));
 
   app.get("/api/skills/:id", (c) => {
@@ -549,7 +593,68 @@ export function createApp(config: NecronomidocConfig): App {
   });
 
   // Stateless MCP endpoint (fetch-portable).
-  app.all("/mcp", (c) => handleMcpRequest(store, c.req.raw));
+  app.all("/mcp", (c) =>
+    handleMcpRequest(store, c.req.raw, { missLog, proposals, canWrite: proposals !== undefined && isAdminRequest(c) }),
+  );
+
+  // ---- Agent-written doc proposals + miss log (admin, decision 0024) ----
+  const adminOnly = (c: Context): Response | undefined => {
+    if (!config.token) return c.json({ error: "Disabled (no token set)." }, 403);
+    if (!isAdminRequest(c)) return c.json({ error: "Unauthorized" }, 401);
+    return undefined;
+  };
+
+  app.get("/api/proposals", (c) => {
+    const denied = adminOnly(c);
+    if (denied) return denied;
+    return c.json({ proposals: listProposals(config.dataDir, { repo: c.req.query("repo"), status: c.req.query("status") }) });
+  });
+
+  app.get("/api/proposals/:id", (c) => {
+    const denied = adminOnly(c);
+    if (denied) return denied;
+    const proposal = readProposal(config.dataDir, c.req.param("id"));
+    return proposal ? c.json(proposal) : c.json({ error: "Not found" }, 404);
+  });
+
+  app.post("/api/proposals/:id/:decision{accept|reject}", async (c) => {
+    const denied = adminOnly(c);
+    if (denied) return denied;
+    let note: string | undefined;
+    try {
+      const body = (await c.req.json()) as { note?: unknown };
+      note = typeof body.note === "string" ? body.note.slice(0, 2000) : undefined;
+    } catch {
+      // no body — fine
+    }
+    try {
+      const decision = c.req.param("decision") as "accept" | "reject";
+      const reviewed = reviewProposal(config.dataDir, c.req.param("id"), decision, { note, store });
+      // Publish an accepted proposal by rebuilding the repo when it is registered.
+      let rebuild: string = "not registered — rebuild the repo to publish";
+      if (reviewed.status === "accepted") {
+        const repo = cachedRegistry().repos.find((r) => slugify(r.id) === reviewed.repo);
+        if (repo?.enabled) {
+          queue.enqueue({ repoId: repo.id, ref: repo.branch, provider: "proposal", receivedAt: new Date().toISOString() });
+          rebuild = "queued";
+        }
+      }
+      const { writtenTo: _internal, ...publicView } = reviewed;
+      return c.json({ ...publicView, ...(reviewed.status === "accepted" ? { rebuild } : {}) });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 409);
+    }
+  });
+
+  app.get("/api/misses", (c) => {
+    const denied = adminOnly(c);
+    if (denied) return denied;
+    const limit = Math.min(500, Math.max(1, Number.parseInt(c.req.query("limit") ?? "50", 10) || 50));
+    return c.json({
+      mode: config.missLog,
+      undocumented: aggregateMisses(readMisses(missLogPath(config.dataDir)), c.req.query("repo") || undefined, limit),
+    });
+  });
 
   // Published manifests, consumed by the SPA and available to any client.
   // Deny-by-default allowlist: the data dir also holds clones of possibly

@@ -24,6 +24,8 @@ import {
   fetchRegistry,
   fetchSkillSet,
   fetchSkillSets,
+  fetchAgentSkill,
+  type AgentSkill,
   fetchSources,
   fetchStatus,
   fetchSubsystems,
@@ -444,6 +446,115 @@ function GenerateSkillsForm({ registry, onDone }: { registry?: Registry; onDone:
   );
 }
 
+/** Copy text to the clipboard, with a textarea fallback for non-secure (http) origins. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the legacy path
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(area);
+  return ok;
+}
+
+function CopyButton({ text, label, className = "btn-sm" }: { text: string; label: string; className?: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <button
+      type="button"
+      className={`btn ${className}`}
+      onClick={async () => {
+        setState((await copyText(text)) ? "copied" : "failed");
+        setTimeout(() => setState("idle"), 2000);
+      }}
+    >
+      {state === "copied" ? "Copied ✓" : state === "failed" ? "Copy failed — select manually" : label}
+    </button>
+  );
+}
+
+/** A copyable command line. */
+function CommandBlock({ command }: { command: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <pre className="flex-1 overflow-x-auto rounded bg-base-200 p-3 text-xs">
+        <code>{command}</code>
+      </pre>
+      <CopyButton text={command} label="Copy" className="btn-ghost btn-xs mt-2" />
+    </div>
+  );
+}
+
+/**
+ * "Add necronomidoc to your agent": connect the MCP server, then install the
+ * built-in `using-necronomidoc` skill — copy, download, or one command.
+ */
+function AgentSkillCard() {
+  const { data: skill } = useAsync<AgentSkill | undefined>(fetchAgentSkill, []);
+  if (!skill) return null;
+  const origin = skill.mcpUrl ? skill.mcpUrl.replace(/\/mcp$/, "") : window.location.origin;
+  const auth = skill.connectCommand.includes("Authorization") ? ' -H "Authorization: Bearer $DOCS_TOKEN"' : "";
+  const dir = skill.installPath.replace(/\/SKILL\.md$/, "");
+  const install = `mkdir -p ${dir} && curl -fsSL${auth} ${origin}/api/agent-skill/SKILL.md -o ${skill.installPath}`;
+  return (
+    <div className="card card-border mb-8 bg-base-100">
+      <div className="card-body gap-3 p-5">
+        <h2 className="text-lg font-semibold">Add necronomidoc to your agent</h2>
+        <p className="text-sm text-base-content/70">
+          Two steps for Claude Code (or any MCP client that loads Agent Skills): connect this server&apos;s MCP
+          endpoint, then install the <span className="font-mono">{skill.name}</span> skill, which teaches the agent
+          the workflow: context in one call, duplicate checks, the pre-commit gate, doc fixes.
+        </p>
+        <div>
+          <h3 className="mb-1 text-sm font-medium">1. Connect the MCP server</h3>
+          <CommandBlock command={skill.connectCommand} />
+        </div>
+        <div>
+          <h3 className="mb-1 text-sm font-medium">2. Install the skill</h3>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <CopyButton text={skill.skillMd} label="Copy SKILL.md" className="btn-primary btn-sm" />
+            <a href="/api/agent-skill/download" className="btn btn-outline btn-sm">
+              Download zip
+            </a>
+            <a href="/api/agent-skill/SKILL.md" target="_blank" rel="noreferrer" className="link-hover link text-sm">
+              View raw
+            </a>
+          </div>
+          <p className="mb-1 text-xs text-base-content/60">
+            Save it as <span className="font-mono">{skill.installPath}</span> (or{" "}
+            <span className="font-mono">.claude/skills/{skill.id}/SKILL.md</span> inside a project), or run:
+          </p>
+          <CommandBlock command={install} />
+        </div>
+        <div className="collapse-arrow collapse bg-base-200">
+          <input type="checkbox" aria-label="Toggle skill preview" />
+          <div className="collapse-title text-sm font-medium">Preview SKILL.md</div>
+          <div className="collapse-content">
+            <p className="mb-2 text-sm text-base-content/70">{skill.description}</p>
+            <MarkdownDoc content={skill.body} slug="" path={`${skill.id}/SKILL.md`} files={[]} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SkillsView() {
   const [refresh, setRefresh] = useState(0);
   const { data, error, loading } = useAsync<SkillSetIndex | undefined>(fetchSkillSets, [refresh]);
@@ -463,8 +574,11 @@ export function SkillsView() {
     <div>
       <h1 className="mb-1 text-2xl font-bold">Skills</h1>
       <p className="mb-6 text-base-content/60">
-        Generated agent skill sets (SKILL.md folders) drawn from the documented repos.
+        Agent skills (SKILL.md folders): the built-in skill for working with this server, and generated skill sets
+        drawn from the documented repos.
       </p>
+      <AgentSkillCard />
+      <h2 className="mb-2 text-lg font-semibold">Generated skill sets</h2>
       {data.sets.length === 0 ? (
         <div className="alert alert-warning">
           <span>No skill sets yet — generate one below.</span>
@@ -927,6 +1041,24 @@ export function CoreDocView() {
   );
 }
 
+/**
+ * Gotchas/invariants (decision 0024): one-line constraints to keep true when
+ * changing this code. Older manifests carry no field — render nothing.
+ */
+function Invariants({ items, className = "" }: { items: string[] | undefined; className?: string }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className={`text-sm ${className}`}>
+      <h3 className="mb-1 text-sm font-medium text-warning">Invariants — keep these true</h3>
+      <ul className="list-inside list-disc text-base-content/80">
+        {items.map((text, i) => (
+          <li key={i}>{text}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ---- Subsystems: purpose + boundaries per named group (slice 3) ----
 
 function SubsystemCard({
@@ -988,6 +1120,7 @@ function SubsystemCard({
             )}
           </div>
         )}
+        <Invariants items={subsystem.invariants} />
         {subsystem.entryPoints.length > 0 && (
           <p className="text-sm">
             <span className="text-base-content/60">Entry points: </span>
@@ -1201,6 +1334,7 @@ function SymbolCard({
             <DocText text={symbol.enrichment.purpose} resolve={resolve} />
           </p>
         )}
+        <Invariants items={symbol.enrichment?.invariants} />
         {symbol.doc?.remarks && (
           <p className="text-sm text-base-content/70">
             <DocText text={symbol.doc.remarks} resolve={resolve} />
@@ -1469,6 +1603,7 @@ export function FileView() {
           <DocText text={file.enrichment.purpose} resolve={resolve} />
         </p>
       )}
+      <Invariants items={file.enrichment?.invariants} className="mb-2" />
 
       {file.imports.length > 0 && (
         <div className="collapse-arrow collapse mb-4 bg-base-200">

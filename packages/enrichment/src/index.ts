@@ -1,4 +1,6 @@
+export * from "./agent.js";
 export * from "./artefacts.js";
+export * from "./builtin-skill.js";
 export * from "./coredocs.js";
 export * from "./docx.js";
 export * from "./skills.js";

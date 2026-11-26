@@ -39,6 +39,7 @@ export function mergeEnrichment(model: DocModel, options: MergeOptions = {}): Do
       purpose: overlay.purpose,
       scope: overlay.scope,
       notes: overlay.notes,
+      invariants: overlay.invariants?.length ? overlay.invariants : undefined,
       provenance: overlay.provenance,
       stale: overlay.sourceContentHash
         ? overlay.sourceContentHash !== contentHash

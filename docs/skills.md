@@ -11,6 +11,32 @@ and agents pick them up by description.
 Skills are generated from **published docs only**: build (and ideally
 enrich) a repo first — richer enrichment means richer skills.
 
+## The built-in `using-necronomidoc` skill
+
+Separate from the generated sets, necronomidoc ships one fixed skill. It
+teaches an agent how to work with the server itself:
+- start each task with `get_context_for_task`;
+- check `is_this_a_duplicate` before writing new code;
+- look things up at `detail: brief`, then fetch `full` for one item;
+- treat invariants as hard constraints and weigh `trust`;
+- gate the diff with `check_change` and run its `testsToRun`;
+- catch up with `what_changed_since`;
+- propose doc fixes.
+
+It needs no LLM and no built repo. Every way of getting it fills in the
+server's MCP URL:
+
+| Where | How |
+|---|---|
+| Site | **Skills** page (`/skills`) → *Add necronomidoc to your agent*: the `claude mcp add` command and a `curl` install line (both copyable), **Copy SKILL.md**, **Download zip**, a preview |
+| HTTP | `GET /api/agent-skill/SKILL.md` (raw), `/api/agent-skill/download` (zip), `/api/agent-skill` (JSON) |
+| CLI | `necronomidoc skills --builtin [--mcp-url <url>] [--auth] [--out ~/.claude/skills]` (prints to stdout without `--out`) |
+
+Install it as `~/.claude/skills/using-necronomidoc/SKILL.md` for every
+project, or as `.claude/skills/using-necronomidoc/SKILL.md` to commit it with
+one repo. A test fails if an MCP tool is added without the skill mentioning
+it, so the skill keeps up with the server.
+
 ## Scope: one, many, or all repos
 
 ```bash

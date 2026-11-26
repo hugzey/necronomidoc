@@ -172,8 +172,28 @@ claude mcp add --transport http necronomidoc http://localhost:4319/mcp
 # team-private server? add: --header "Authorization: Bearer $DOCS_TOKEN"
 ```
 
-(Or in Cursor / any MCP client: add an HTTP MCP server at that URL.) Available
-tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
+(Or in Cursor / any MCP client: add an HTTP MCP server at that URL.)
+
+Then **install the built-in `using-necronomidoc` skill**. It teaches the
+agent the workflow:
+- start each task with `get_context_for_task`;
+- call `is_this_a_duplicate` before writing new code;
+- gate each diff with `check_change` and run its tests;
+- propose doc fixes.
+
+The easiest way is the **Skills** page of the site (`/skills`). It shows both
+commands for this server with copy buttons, and has **Copy SKILL.md** and
+**Download zip** buttons. From a terminal:
+
+```bash
+mkdir -p ~/.claude/skills/using-necronomidoc && \
+  curl -fsSL http://localhost:4319/api/agent-skill/SKILL.md -o ~/.claude/skills/using-necronomidoc/SKILL.md
+# or, from the CLI (no server needed):
+necronomidoc skills --builtin --mcp-url http://localhost:4319/mcp --out ~/.claude/skills
+```
+
+Every tool is listed in [Agent tools](agent-tools.md). The original ten:
+`list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`,
 `get_core_doc`, `get_subsystem_overview`, `get_product_overview`,
 `get_product_doc`, `find_intents_for_code`, `list_files`. Every response carries
 provenance and a `stale` flag; `get_core_doc` serves the repo's overview /
@@ -327,10 +347,29 @@ Drop YAML/JSON overlay files in the source repo under
   provenance: human
   summary: "Canonical counter hook — use this instead of hand-rolling useState."
   purpose: "App-wide counter state machine."
+  invariants:                      # gotchas surfaced in every MCP answer touching it
+    - "Never persist the count — it is UI state only."
 ```
 
 Rebuild and both the site and MCP reflect the change. If the underlying code
 changes, the overlay is kept but flagged `stale: true`.
+
+## Agent tools: context, gates, proposals, misses
+
+Agents should start with `get_context_for_task` and gate their diffs with
+`check_change`; see [Agent tools](agent-tools.md). The CLI side:
+
+```bash
+# write executable check skeletons for each intent interaction session
+necronomidoc product checks . [--session SES-001] [--out tests/product]
+
+# review doc updates agents proposed over MCP (needs DOCS_TOKEN on the server)
+necronomidoc proposals list
+necronomidoc proposals accept P-mabc123-1f2e3d --note "verified"
+
+# what agents searched for and didn't find; suggest + merge search synonyms
+necronomidoc misses --repo widgets --suggest [--write]
+```
 
 ## Validate / export schemas
 

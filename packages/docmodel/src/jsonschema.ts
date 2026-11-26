@@ -8,6 +8,7 @@ import {
   VersionsManifest,
 } from "./schema.js";
 import { PRODUCT_FRONTMATTER_SCHEMAS, ProductManifest } from "./product.js";
+import { AgentManifest, AgentProposal } from "./agent.js";
 
 /**
  * Export the public schemas as JSON Schema so non-TS adapter authors (Python,
@@ -23,6 +24,8 @@ export function exportJsonSchemas(): Record<string, unknown> {
     VersionsManifest: zodToJsonSchema(VersionsManifest, "VersionsManifest"),
     ProductManifest: zodToJsonSchema(ProductManifest, "ProductManifest"),
     ProductFrontmatter: productFrontmatterJsonSchema(),
+    AgentManifest: zodToJsonSchema(AgentManifest, "AgentManifest"),
+    AgentProposal: zodToJsonSchema(AgentProposal, "AgentProposal"),
   };
 }
 
