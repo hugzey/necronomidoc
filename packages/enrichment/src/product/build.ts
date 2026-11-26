@@ -72,6 +72,11 @@ export interface BuildProductOptions {
   previous?: ProductManifest;
   /** Ignore the override and LLM tiers (the CLI linter checks repo files only). */
   repoOnly?: boolean;
+  /**
+   * Candidate docs to lint in place (agent proposals, decision 0024): they
+   * replace any source at the same path and win over every tier on their id.
+   */
+  proposed?: ProductSourceFile[];
   now?: () => string;
 }
 
@@ -370,9 +375,13 @@ export function buildProduct(model: DocModel, options: BuildProductOptions = {})
   const now = options.now ?? (() => new Date().toISOString());
 
   // 1. Gather curated sources (repo wins over override on the same id).
+  const proposedPaths = new Set((options.proposed ?? []).map((f) => f.path));
   const curatedSources = [
-    ...repoProductFiles(model),
-    ...(options.repoOnly || !options.overrideDir ? [] : overrideProductFiles(options.overrideDir)),
+    ...(options.proposed ?? []),
+    ...[
+      ...repoProductFiles(model),
+      ...(options.repoOnly || !options.overrideDir ? [] : overrideProductFiles(options.overrideDir)),
+    ].filter((f) => !proposedPaths.has(f.path)),
   ];
   let overview: string | undefined;
   const byId = new Map<string, ParsedDoc>();

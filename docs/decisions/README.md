@@ -27,6 +27,7 @@ Architectural and directional decisions for the documentation server project. On
 | [0021](0021-doc-version-journal.md) | Documentation versioning: per-repo state journal + metadata info drawer | Accepted |
 | [0022](0022-subsystem-modeling.md) | Subsystem modeling: import-graph clustering floor, id-referencing two-way links, repo overview + generated architecture diagram | Accepted |
 | [0023](0023-product-docs-intent-sessions.md) | Product docs: personas, jobs, intent interaction sessions and stories in `docs/product/`, verified against code (bindings + drift) and tests (id citations) | Accepted |
+| [0024](0024-agent-tooling.md) | Agent tooling: task-scoped context with token budgets, detail levels, code-aware ranking, change gates, mined recipes/call sites/test bindings, invariants, trust scores, session checks, doc write-back, miss log | Accepted |
 
 Some decisions cite pre-implementation research notes or numbered delivery
 plans ("slices"). Those documents were removed from the tree once the project

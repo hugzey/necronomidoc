@@ -927,6 +927,24 @@ export function CoreDocView() {
   );
 }
 
+/**
+ * Gotchas/invariants (decision 0024): one-line constraints to keep true when
+ * changing this code. Older manifests carry no field — render nothing.
+ */
+function Invariants({ items, className = "" }: { items: string[] | undefined; className?: string }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className={`text-sm ${className}`}>
+      <h3 className="mb-1 text-sm font-medium text-warning">Invariants — keep these true</h3>
+      <ul className="list-inside list-disc text-base-content/80">
+        {items.map((text, i) => (
+          <li key={i}>{text}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ---- Subsystems: purpose + boundaries per named group (slice 3) ----
 
 function SubsystemCard({
@@ -988,6 +1006,7 @@ function SubsystemCard({
             )}
           </div>
         )}
+        <Invariants items={subsystem.invariants} />
         {subsystem.entryPoints.length > 0 && (
           <p className="text-sm">
             <span className="text-base-content/60">Entry points: </span>
@@ -1201,6 +1220,7 @@ function SymbolCard({
             <DocText text={symbol.enrichment.purpose} resolve={resolve} />
           </p>
         )}
+        <Invariants items={symbol.enrichment?.invariants} />
         {symbol.doc?.remarks && (
           <p className="text-sm text-base-content/70">
             <DocText text={symbol.doc.remarks} resolve={resolve} />
@@ -1469,6 +1489,7 @@ export function FileView() {
           <DocText text={file.enrichment.purpose} resolve={resolve} />
         </p>
       )}
+      <Invariants items={file.enrichment?.invariants} className="mb-2" />
 
       {file.imports.length > 0 && (
         <div className="collapse-arrow collapse mb-4 bg-base-200">

@@ -7,7 +7,9 @@
 | Contents | Regenerable? |
 |----------|--------------|
 | `repos.json` (source registry) | no — **curated** |
-| `enrichment/<repo>/` (human + LLM overlays) | no — **curated** (LLM overlays re-cost money to regenerate) |
+| `enrichment/<repo>/` (human + LLM overlays, accepted agent proposals, synonyms) | no — **curated** (LLM overlays re-cost money to regenerate) |
+| `proposals/<repo>/` (agent-written doc drafts) | no — pending review; lost drafts must be re-proposed |
+| `telemetry/` (MCP miss log) | no, but disposable — only feeds "undocumented concepts" |
 | `repos/<slug>/` (built doc manifests) | yes — rebuild from source |
 | `clones/` (shallow clones) | yes — re-fetched on next build |
 | `status.json`, `queue.json`, `meta.json` | build history / queue journal / schema stamp |

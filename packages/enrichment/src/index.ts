@@ -1,3 +1,4 @@
+export * from "./agent.js";
 export * from "./artefacts.js";
 export * from "./coredocs.js";
 export * from "./docx.js";

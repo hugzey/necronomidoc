@@ -11,7 +11,8 @@ step: Guard intent
 release: R2
 priority: should
 code:
-  - packages/mcp/src/tools.ts#tools
+  - packages/mcp/src/tools.ts#intentsForCode
+  - packages/mcp/src/toolset.ts#tools
 ---
 
 # Ask which intents run through a file

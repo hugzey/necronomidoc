@@ -327,10 +327,29 @@ Drop YAML/JSON overlay files in the source repo under
   provenance: human
   summary: "Canonical counter hook — use this instead of hand-rolling useState."
   purpose: "App-wide counter state machine."
+  invariants:                      # gotchas surfaced in every MCP answer touching it
+    - "Never persist the count — it is UI state only."
 ```
 
 Rebuild and both the site and MCP reflect the change. If the underlying code
 changes, the overlay is kept but flagged `stale: true`.
+
+## Agent tools: context, gates, proposals, misses
+
+Agents should start with `get_context_for_task` and gate their diffs with
+`check_change`; see [Agent tools](agent-tools.md). The CLI side:
+
+```bash
+# write executable check skeletons for each intent interaction session
+necronomidoc product checks . [--session SES-001] [--out tests/product]
+
+# review doc updates agents proposed over MCP (needs DOCS_TOKEN on the server)
+necronomidoc proposals list
+necronomidoc proposals accept P-mabc123-1f2e3d --note "verified"
+
+# what agents searched for and didn't find; suggest + merge search synonyms
+necronomidoc misses --repo widgets --suggest [--write]
+```
 
 ## Validate / export schemas
 

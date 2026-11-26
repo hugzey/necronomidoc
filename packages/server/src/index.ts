@@ -11,6 +11,18 @@ export * from "./skills.js";
 export * from "./artefacts.js";
 export * from "./docstandard.js";
 export * from "./product.js";
+export * from "./proposals.js";
+// Agent-tooling helpers the CLI needs (decision 0024).
+export {
+  ManifestStore,
+  aggregateMisses,
+  contentTerms,
+  findDuplicates,
+  missLogPath,
+  readMisses,
+  sessionCheckSkeleton,
+} from "@necronomidoc/mcp";
+export { mergeSynonymsFile } from "@necronomidoc/enrichment";
 export * from "./auth.js";
 export * from "./backup.js";
 export * from "./datadir.js";

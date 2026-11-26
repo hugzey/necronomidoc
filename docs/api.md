@@ -23,12 +23,23 @@ verify each delivery themselves).
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `GET /` and site routes | public* | The doc-site SPA. `/help` serves this documentation. |
-| `ALL /mcp` | public*; bearer when auth is on | Stateless streamable-HTTP MCP endpoint. Tools: `list_repos`, `search_docs`, `get_file_doc`, `get_function_doc`, `get_core_doc`, `get_subsystem_overview`, `get_product_overview`, `get_product_doc`, `find_intents_for_code`, `list_files`. |
+| `ALL /mcp` | public*; bearer when auth is on | Stateless streamable-HTTP MCP endpoint. Read tools: `list_repos`, `get_context_for_task`, `search_docs`, `is_this_a_duplicate`, `get_file_doc`, `get_function_doc`, `get_recipes`, `check_change`, `what_changed_since`, `get_core_doc`, `get_subsystem_overview`, `get_product_overview`, `get_product_doc`, `find_intents_for_code`, `get_session_checks`, `list_files` — all take `detail: brief\|normal\|full` ([agent tools](agent-tools.md)). With a token configured, also `propose_overlay`, `propose_product_doc`, `list_proposals`, which require the **admin** bearer on the call. |
 | `GET /data/registry.json` | public* | Which repos are published (name, slug, counts). |
-| `GET /data/repos/<slug>/…` | public* | Published manifests: `docmodel.json`, `search.json`, `coredocs.json`, `subsystems.json`, `llms.txt`, `enrichment-report.json`, `versions.json` (the [version journal](doc-versions.md)), `sources.json` + `sources/<path>` ([source snapshots](source-viewer.md), served as `text/plain`), and `versions/<n>/…` (the retained per-version archive for [historical preview](doc-versions.md#previewing-a-past-version)). Nothing else under the data dir is ever served. |
+| `GET /data/repos/<slug>/…` | public* | Published manifests: `docmodel.json`, `search.json`, `coredocs.json`, `subsystems.json`, `llms.txt`, `enrichment-report.json`, `agent.json` ([recipes, call sites, test bindings, synonyms](agent-tools.md#where-it-lives)), `versions.json` (the [version journal](doc-versions.md)), `sources.json` + `sources/<path>` ([source snapshots](source-viewer.md), served as `text/plain`), and `versions/<n>/…` (the retained per-version archive for [historical preview](doc-versions.md#previewing-a-past-version)). Nothing else under the data dir is ever served. |
 
 \* "public" means public unless `DOCS_AUTH_REQUIRED=1`, which gates all of
 these behind the session/bearer credential.
+
+## Agent proposals & misses
+
+[Agent-written docs and the miss log](agent-tools.md#agents-improve-the-docs-proposals). Disabled (403) when no token is set.
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/proposals[?repo=&status=]` | **admin** | Agent-submitted doc drafts, newest first. |
+| `GET /api/proposals/<id>` | **admin** | One draft: the overlay or product doc, its lint findings, rationale. |
+| `POST /api/proposals/<id>/accept` / `…/reject` | **admin** | Review a draft (optional `{"note":"…"}`). Accepting writes it into the server-side curation tier and queues a rebuild of a registered repo (`rebuild: queued`). |
+| `GET /api/misses[?repo=&limit=]` | **admin** | MCP queries that returned nothing useful, aggregated by frequency (`mode` = the `DOCS_MISS_LOG` privacy mode). |
 
 ## Triggering builds
 

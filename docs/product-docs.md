@@ -283,6 +283,12 @@ skipping `fixtures/` and `testdata/`. It reports:
 
 Coverage is opt-in by status. Drafts never nag.
 
+Skipped or pending declarations (`it.skip(`, `test.fixme(`, `xit(`,
+`@wip`/`@skip` tags…) don't count: a citation in a test that doesn't run is a
+TODO, not verification. `necronomidoc product checks` (and the MCP tool
+`get_session_checks`) generate exactly such skipped skeletons per session
+outcome, ready to fill in ([agent tools](agent-tools.md#executable-session-checks-get_session_checks)).
+
 ## Interaction surfaces
 
 The build lists the repo's **surfaces**: every OpenAPI operation, plus

@@ -20,14 +20,26 @@ import {
 import {
   CORE_DOCS_SUBDIR,
   PRODUCT_OVERRIDE_SUBDIR,
+  buildAgentManifest,
   buildCoreDocs,
   buildProduct,
   buildSubsystems,
   computeEnrichmentReport,
   mergeEnrichment,
-  scanTestRefs,
+  scanTests,
+  workingTreeReader,
 } from "@necronomidoc/enrichment";
-import { paths, readRegistry, registryEntryFor, upsertRegistry, writeRepoManifests } from "@necronomidoc/mcp";
+import {
+  aggregateMisses,
+  buildIndex,
+  missLogPath,
+  paths,
+  readMisses,
+  readRegistry,
+  registryEntryFor,
+  upsertRegistry,
+  writeRepoManifests,
+} from "@necronomidoc/mcp";
 import { ensureDataDirVersion } from "./datadir.js";
 import { snapshotSources } from "./sources.js";
 import {
@@ -208,15 +220,25 @@ export function publishModel(
   // Product docs (decision 0023): the previously published manifest is the
   // code-binding drift baseline; tests are scanned only when a working tree
   // exists (pre-extracted IR reports coverage as "not scanned").
+  // One walk over the tests yields both the product-id citations and the
+  // test-to-code bindings (decision 0024).
+  const testScan = repoDir ? scanTests(repoDir, new Set(merged.files.map((f) => f.path))) : undefined;
   const product = buildProduct(merged, {
     overrideDir: join(serverEnrichmentDir, PRODUCT_OVERRIDE_SUBDIR),
     llmDir: serverEnrichmentDir,
-    testRefs: repoDir ? scanTestRefs(repoDir) : undefined,
+    testRefs: testScan?.refs,
     previous: readPublishedProduct(finalDir),
+  });
+  const index = buildIndex(merged, subsystems, coreDocs, product);
+  const agent = buildAgentManifest(merged, {
+    read: repoDir ? workingTreeReader(repoDir) : undefined,
+    tests: testScan?.bindings,
+    curatedDirs: repoDir ? [join(repoDir, ".necronomidoc"), serverEnrichmentDir] : [serverEnrichmentDir],
+    undocumented: undocumentedConcepts(dataDir, merged.repo.slug, (q) => index.search(q).length),
   });
 
   const entry = registryEntryFor(merged, report);
-  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report, product }, (tmpDir) => {
+  publishAtomically(dataDir, merged, { subsystems, coreDocs, enrichmentReport: report, product, agent, index }, (tmpDir) => {
     // Source snapshots + version journal + per-version archive are staged into
     // the same tmp dir so the atomic swap publishes everything (or nothing)
     // together.
@@ -267,6 +289,21 @@ export async function buildRepo(options: BuildOptions): Promise<BuildResult> {
     return { model: merged, entry, adapter };
   } finally {
     cleanup?.();
+  }
+}
+
+/**
+ * Concepts agents asked this repo (or all repos) for that still return
+ * nothing after this build — the "undocumented concepts" feedback loop
+ * (decision 0024). Hashed misses can't be re-checked, so they are kept.
+ */
+function undocumentedConcepts(dataDir: string, slug: string, hitsFor: (query: string) => number) {
+  try {
+    return aggregateMisses(readMisses(missLogPath(dataDir)), slug, 100)
+      .filter((c) => c.hashed || hitsFor(c.query) === 0)
+      .slice(0, 25);
+  } catch {
+    return [];
   }
 }
 

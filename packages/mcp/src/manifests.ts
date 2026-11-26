@@ -5,6 +5,7 @@ import {
   SCHEMA_VERSION,
   type CoreDocsManifest,
   type DocModel,
+  type AgentManifest,
   type DocSymbolShape,
   type EnrichmentReport,
   type ProductManifest,
@@ -25,6 +26,10 @@ export const paths = {
   /** Product docs: personas, jobs, sessions, stories, journeys (decision 0023). */
   product: (repoDir: string) => join(repoDir, "product.json"),
   enrichmentReport: (repoDir: string) => join(repoDir, "enrichment-report.json"),
+  /** Agent knowledge: recipes, usage examples, test bindings, synonyms (decision 0024). */
+  agent: (repoDir: string) => join(repoDir, "agent.json"),
+  /** Agent-written doc proposals awaiting review — never served (decision 0024). */
+  proposalsDir: (dataDir: string, slug: string) => join(dataDir, "proposals", slug),
   sources: (repoDir: string) => join(repoDir, "sources.json"),
   sourcesDir: (repoDir: string) => join(repoDir, "sources"),
   versions: (repoDir: string) => join(repoDir, "versions.json"),
@@ -130,6 +135,9 @@ export interface RepoManifestExtras {
   coreDocs?: CoreDocsManifest;
   enrichmentReport?: EnrichmentReport;
   product?: ProductManifest;
+  agent?: AgentManifest;
+  /** A search index already built from this same model (skips a rebuild). */
+  index?: ReturnType<typeof buildIndex>;
 }
 
 /**
@@ -147,7 +155,7 @@ export function writeRepoManifests(
   writeFileSync(paths.docmodel(repoDir), JSON.stringify(model, null, 2));
   writeFileSync(
     paths.searchIndex(repoDir),
-    serializeIndex(buildIndex(model, extras.subsystems, extras.coreDocs, extras.product)),
+    serializeIndex(extras.index ?? buildIndex(model, extras.subsystems, extras.coreDocs, extras.product)),
   );
   writeFileSync(paths.llmsTxt(repoDir), renderLlmsTxt(model, extras.coreDocs, extras.product));
   if (extras.subsystems) {
@@ -158,6 +166,9 @@ export function writeRepoManifests(
   }
   if (extras.product) {
     writeFileSync(paths.product(repoDir), JSON.stringify(extras.product, null, 2));
+  }
+  if (extras.agent) {
+    writeFileSync(paths.agent(repoDir), JSON.stringify(extras.agent));
   }
   if (extras.enrichmentReport) {
     writeFileSync(

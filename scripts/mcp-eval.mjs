@@ -46,10 +46,17 @@ try {
   store.reload();
 
   let passed = 0;
+  let bestRight = 0;
+  let bestGiven = 0;
   for (const q of questions) {
     const k = q.k ?? 3;
-    const { hits } = tools.search_docs(store, { query: q.query, repo: q.repo });
-    const rank = hits.findIndex((h) => h.id.includes(q.expect));
+    const { hits, bestAnswer } = tools.search_docs(store, { query: q.query, repo: q.repo });
+    // A symbol collapsed into its file's hit (`matches`) counts at that rank.
+    const rank = hits.findIndex((h) => h.id.includes(q.expect) || h.matches?.some((m) => m.id.includes(q.expect)));
+    if (bestAnswer) {
+      bestGiven++;
+      if (bestAnswer.id.includes(q.expect)) bestRight++;
+    }
     const ok = rank !== -1 && rank < k;
     if (ok) passed++;
     const shown = rank === -1 ? "miss" : `rank ${rank + 1}`;
@@ -59,6 +66,7 @@ try {
     }
   }
   console.log(`\n${passed}/${questions.length} questions answered in the top k.`);
+  console.log(`bestAnswer given for ${bestGiven}/${questions.length}; correct ${bestRight}/${bestGiven} (one-call answers).`);
   process.exitCode = passed === questions.length ? 0 : 1;
 } finally {
   rmSync(dataDir, { recursive: true, force: true });

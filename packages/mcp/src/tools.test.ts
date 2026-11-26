@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CoreDocsManifest, DocFile } from "@necronomidoc/docmodel";
 import type { ManifestStore } from "./store.js";
-import { tools } from "./tools.js";
+import { tools } from "./toolset.js";
 
 function endpoint(id: string, name: string, tag: string, summary: string): DocFile["symbols"][number] {
   return {
@@ -50,6 +50,11 @@ const store = {
   getFile: (repo: string, path: string) =>
     repo === "api" && path === "openapi.yaml" ? specFile : undefined,
   getCoreDocs: (repo: string) => (repo === "api" ? coreDocs : undefined),
+  trustFor: () => ({ score: 0.4, level: "low", why: "heuristic" }),
+  invariantsFor: () => [],
+  testsFor: () => [],
+  importersOf: () => [],
+  getAgent: () => undefined,
 } as unknown as ManifestStore;
 
 describe("get_file_doc on an OpenAPI spec", () => {

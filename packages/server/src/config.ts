@@ -32,6 +32,12 @@ export interface NecronomidocConfig {
   sessionSecret: string;
   /** Log line format: structured JSON (default) or human-readable text. */
   logFormat: "json" | "text";
+  /**
+   * MCP miss log (decision 0024): `full` records the text of queries that
+   * returned nothing useful, `hashed` only a hash of it (repeat misses still
+   * aggregate, no content kept), `off` nothing.
+   */
+  missLog: "full" | "hashed" | "off";
 }
 
 const DEFAULTS: NecronomidocConfig = {
@@ -46,6 +52,7 @@ const DEFAULTS: NecronomidocConfig = {
   authRequired: false,
   sessionSecret: "",
   logFormat: "json",
+  missLog: "full",
 };
 
 /**
@@ -79,6 +86,8 @@ export function loadConfig(overrides: Partial<NecronomidocConfig> = {}): Necrono
   if (process.env.DOCS_SESSION_SECRET) env.sessionSecret = process.env.DOCS_SESSION_SECRET;
   if (process.env.DOCS_LOG_FORMAT === "json" || process.env.DOCS_LOG_FORMAT === "text")
     env.logFormat = process.env.DOCS_LOG_FORMAT;
+  if (process.env.DOCS_MISS_LOG === "full" || process.env.DOCS_MISS_LOG === "hashed" || process.env.DOCS_MISS_LOG === "off")
+    env.missLog = process.env.DOCS_MISS_LOG;
 
   const defined = <T extends object>(o: T): Partial<T> =>
     Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;

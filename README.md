@@ -38,8 +38,14 @@ choices; [docs/architecture.md](docs/architecture.md) explains the design.
   standard `docs/product/` format. Steps bind to real code (broken/changed
   bindings flag drift), tests cite ids for traceability, and `necronomidoc
   product lint` gates CI ([docs/product-docs.md](docs/product-docs.md)).
-- **Serves agents, not just browsers** — MCP tools with provenance and
-  staleness on every answer, `llms.txt` per repo, generated
+- **Serves agents, not just browsers** — task-scoped context in one call
+  within a token budget, `brief`/`full` detail levels, code-aware search with
+  a `bestAnswer`, `what_changed_since`, mined "how do I…" recipes and real
+  call sites, a `check_change` pre-commit gate (intents, tests to run,
+  boundary violations), a duplicate guard, invariants and a trust score on
+  every answer, agent-written doc proposals reviewed by humans, and a miss
+  log that shows where the docs fail agents ([docs/agent-tools.md](docs/agent-tools.md)).
+  Plus MCP tools with provenance and staleness on every answer, `llms.txt` per repo, generated
   **Agent Skills** (`necronomidoc skills`), and **artefact generation** that
   fills your own `.md`/`.docx` templates from repo knowledge
   (`necronomidoc artefact`).
@@ -111,9 +117,9 @@ MCP connects): [EC2](docs/deploy/ec2.md) ·
 | `packages/adapter-python` | Python extraction via pinned `griffe dump` (parsed docstrings, signatures; static analysis, out of process) |
 | `packages/adapter-csharp` | C#/.NET extraction via `docfx metadata` ManagedReference YAML (Roslyn-driven, out of process) |
 | `packages/enrichment` | Heuristic + LLM purpose producers, overlay loader, precedence merge, staleness reports, subsystem maps, product docs (parse, validate, bind, trace, diagram) |
-| `packages/mcp` | Manifest builder + MCP tools over a stateless streamable-HTTP server |
+| `packages/mcp` | Manifest builder + MCP tools over a stateless streamable-HTTP server: lookups, task context, ranking, change gates, duplicate guard, session checks, miss log |
 | `packages/server` | Hono server (site + `/data` + `/mcp` + webhooks + build API + auth + structured logs), provider adapters, journaled build queue |
-| `packages/cli` | `necronomidoc build \| enrich \| skills \| artefact \| init-docs \| product \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
+| `packages/cli` | `necronomidoc build \| enrich \| skills \| artefact \| init-docs \| product \| proposals \| misses \| serve \| repo add\|list\|remove \| validate \| export-schemas \| export \| doctor` |
 | `packages/site` | React + Vite + React Router SPA doc site, client-side search, the served `/help` documentation |
 
 ## Tests

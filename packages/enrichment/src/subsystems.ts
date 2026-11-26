@@ -268,6 +268,7 @@ export function heuristicSubsystems(model: DocModel): Subsystem[] {
         entryPoints,
         related,
         dirs,
+        invariants: [],
         provenance: "heuristic" as const,
       };
     });
@@ -516,7 +517,7 @@ export function subsystemsFromResponse(text: string): SubsystemSource {
     let id = slugify(s.name);
     while (seen.has(id)) id = `${id}-2`;
     seen.add(id);
-    return { ...s, id };
+    return { ...s, id, invariants: [] as string[] };
   });
 
   // Resolve `to`/`name` references (which the model expresses by subsystem

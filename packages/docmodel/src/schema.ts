@@ -78,6 +78,12 @@ export const AttachedEnrichment = z.object({
   purpose: z.string().optional(),
   scope: z.string().optional(),
   notes: z.string().optional(),
+  /**
+   * Gotchas and invariants: one-line constraints an agent must respect when
+   * touching this code ("must hold the lock", "never call from the UI layer").
+   * Surfaced in every MCP answer that touches the target. Additive in v1.
+   */
+  invariants: z.array(z.string()).optional(),
   provenance: Provenance,
   /** True when the underlying code changed since this enrichment was written. */
   stale: z.boolean().default(false),
@@ -176,6 +182,8 @@ export const EnrichmentOverlay = z.object({
   purpose: z.string().optional(),
   scope: z.string().optional(),
   notes: z.string().optional(),
+  /** Gotchas/invariants to keep true when changing the target (one line each). */
+  invariants: z.array(z.string()).optional(),
   provenance: Provenance.default("human"),
   /** Content hash of the target when the overlay was written (staleness). */
   sourceContentHash: z.string().optional(),
@@ -230,6 +238,12 @@ export const Subsystem = z.object({
   related: z.array(RelatedSubsystem).default([]),
   /** Directory prefixes (repo-relative) whose files belong to this subsystem. */
   dirs: z.array(z.string()).default([]),
+  /**
+   * Invariants every change inside this subsystem must keep true ("IDs are
+   * stable across builds", "never imports from the UI layer"). Surfaced in
+   * MCP answers that touch any of its files. Additive in v1.
+   */
+  invariants: z.array(z.string()).default([]),
   provenance: Provenance.default("heuristic"),
 });
 export type Subsystem = z.infer<typeof Subsystem>;

@@ -209,5 +209,8 @@ node scripts/mcp-eval.mjs <repo> my-questions.json   # your repo + questions
 ```
 
 Each question is `{ "query", "expect", "k" }` — it passes when a `search_docs`
-hit whose id contains `expect` ranks in the top `k`. Use it before/after an
-enrich run to see what the LLM summaries buy you.
+hit whose id contains `expect` ranks in the top `k` (a symbol collapsed into
+its file's hit, under `matches`, counts at that rank). It also reports how
+often `bestAnswer` was given and how often it was right — the "answered in
+one call" rate. Use it before/after an enrich run to see what the LLM
+summaries buy you.
